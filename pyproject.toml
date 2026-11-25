@@ -20,4 +20,4 @@ nbg-tracker = "nbg_tracker.__main__:main"
 where = ["src"]
 
 [tool.setuptools.package-data]
-nbg_tracker = ["web/*"]
+nbg_tracker = ["web/*", "known_ids.json"]
