@@ -249,7 +249,8 @@ def test_screen_capturer_keeps_best_build_frame(tmp_path):
     zoomed = Image.fromarray(_board_image([("Mine", *GRID[0])])[:, :, ::-1])
     frames = iter([full, full] + [zoomed] * 1000)  # the camera zooms in late in the build phase
     out = []
-    cap = ScreenCapturer(out.append, tmp_path, Recognizer(tmp_path), grab=lambda: next(frames), interval=0.005)
+    cap = ScreenCapturer(out.append, tmp_path, Recognizer(tmp_path), grab=lambda: next(frames), interval=0.005,
+                         view_check=lambda img: True)
     cap.start()
     cap({"type": "run_start", "clan": "Unknown"})
     time.sleep(0.3)
@@ -371,3 +372,37 @@ def test_tracker_started_mid_run_catches_up(tmp_path):
     tailer.stop()
     [run] = db.load_runs()
     assert (run.wins, run.losses, run.elo_after) == (10, 4, 115)
+
+
+def test_battle_view_frames_are_skipped(tmp_path):
+    import time
+    import cv2
+    import numpy as np
+    from PIL import Image
+    from nbg_tracker.capture.screen import ScreenCapturer
+    from nbg_tracker.vision import _SHOP_BUTTONS, Recognizer, is_build_view
+
+    def with_shop(img):
+        img = img.copy()
+        w = img.shape[1]
+        for (r0, top, r1, bottom), ref in _SHOP_BUTTONS:
+            patch = cv2.resize(ref.astype("uint8"), (r0 - r1, bottom - top), interpolation=cv2.INTER_NEAREST)
+            img[top:bottom, w - r0:w - r1] = patch[:, :, None]
+        return img
+
+    mine = [("Mine", *GRID[0])]
+    both = mine + [("Farm", *GRID[1]), ("Wolf Den", *GRID[2]), ("Healers Hut", *GRID[3])]
+    build = with_shop(_board_image(mine))
+    battle = _board_image(both)  # more structures, but no shop: the battle view
+    assert is_build_view(build) and not is_build_view(battle)
+
+    frames = iter([Image.fromarray(build[:, :, ::-1])] + [Image.fromarray(battle[:, :, ::-1])] * 1000)
+    out = []
+    cap = ScreenCapturer(out.append, tmp_path, Recognizer(tmp_path), grab=lambda: next(frames), interval=0.005)
+    cap.start()
+    cap({"type": "run_start", "clan": "Unknown"})
+    time.sleep(0.3)
+    cap({"type": "opponent", "name": "x"})
+    cap.stop()
+    board = next(e for e in out if e["type"] == "board")
+    assert len(board["structures"]) == 1  # only your own village

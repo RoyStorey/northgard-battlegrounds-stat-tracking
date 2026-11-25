@@ -2,7 +2,8 @@
 
 Only the game's own window is captured, and only while it is the window in
 front, so nothing else on your screen is ever recorded. Frames are taken
-every couple of seconds during the build phase, and the one showing the most
+every couple of seconds during the build phase (frames of the battle view,
+which shows the opponent's village too, are skipped), and the one showing the most
 structures is kept as that battle's board when the log says a battle starts
 (the camera moves, so the last frame may be zoomed in on one corner).
 """
@@ -18,7 +19,7 @@ from typing import Callable
 
 from PIL import Image
 
-from ..vision import Recognizer, frame_quality
+from ..vision import Recognizer, frame_quality, is_build_view
 
 log = logging.getLogger(__name__)
 
@@ -82,13 +83,14 @@ class ScreenCapturer:
 
     def __init__(self, emit: Callable[[dict], None], shots_dir: str | Path,
                  recognizer: Recognizer | None = None, grab: Callable[[], Image.Image | None] | None = None,
-                 interval: float = 1.5):
+                 interval: float = 1.5, view_check: Callable[[Image.Image], bool] = is_build_view):
         self.emit = emit
         self.shots_dir = Path(shots_dir)
         self.shots_dir.mkdir(parents=True, exist_ok=True)
         self.recognizer = recognizer
         self._grab = grab
         self.interval = interval
+        self.view_check = view_check
         self.building = False
         self.latest: Image.Image | None = None
         self.latest_quality = -1
@@ -119,6 +121,8 @@ class ScreenCapturer:
                 except Exception:
                     log.exception("screen grab failed")
                     img = None
+                if img is not None and not self._is_build_view(img):
+                    img = None  # battle view: the opponent's village is on screen too
                 if img is not None:
                     try:
                         q = frame_quality(img)
@@ -132,6 +136,13 @@ class ScreenCapturer:
                     if better and time.monotonic() - self._live_at > 4:
                         self._update_live(img)
             self._stop.wait(self.interval)
+
+    def _is_build_view(self, img: Image.Image) -> bool:
+        try:
+            return self.view_check(img)
+        except Exception:
+            log.exception("view check failed")
+            return False
 
     def _update_live(self, img: Image.Image) -> None:
         self._live_at = time.monotonic()

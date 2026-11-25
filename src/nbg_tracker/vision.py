@@ -210,6 +210,41 @@ def _nearest(badges: list[Badge], x: float, y: float) -> Badge | None:
     return best
 
 
+# Greyscale fingerprints (12x6) of the shop's LOCK and reroll buttons at the right edge of
+# the screen. They are only on screen in the build phase; the battle view, which shows the
+# opponent's village beside yours, has no shop. Boxes are (from right, top, to right, bottom)
+# at 1080 pixels high.
+_SHOP_BUTTONS = [
+    ((135, 762, 62, 812), np.array([
+        [67, 58, 58, 58, 57, 58, 58, 57, 57, 58, 58, 71], [66, 60, 60, 59, 60, 59, 59, 60, 60, 60, 59, 69],
+        [65, 112, 73, 127, 115, 126, 139, 116, 109, 148, 70, 68], [63, 101, 115, 110, 114, 109, 123, 115, 99, 133, 70, 67],
+        [61, 45, 46, 46, 46, 46, 46, 46, 46, 46, 46, 65], [59, 40, 41, 41, 41, 41, 41, 41, 41, 41, 41, 65]])),
+    ((168, 832, 30, 886), np.array([
+        [71, 68, 71, 74, 76, 76, 76, 76, 74, 71, 68, 72], [66, 60, 60, 74, 70, 59, 60, 60, 60, 60, 60, 66],
+        [63, 56, 72, 138, 144, 56, 56, 134, 94, 88, 56, 63], [60, 50, 52, 145, 138, 54, 51, 129, 89, 75, 51, 60],
+        [57, 45, 45, 62, 51, 45, 45, 45, 45, 46, 45, 57], [62, 55, 58, 61, 62, 63, 63, 62, 60, 57, 54, 62]])),
+]
+SHOP_MATCH = 15  # mean grey difference; build-phase frames measure ~0.3, the battle view ~60
+
+
+def is_build_view(img) -> bool:
+    """True when the shop is on screen, i.e. the view shows only your own village."""
+    bgr = to_bgr(img)
+    scale = REF_HEIGHT / bgr.shape[0]
+    if abs(scale - 1) > 0.01:
+        bgr = cv2.resize(bgr, None, fx=scale, fy=scale, interpolation=cv2.INTER_AREA)
+    gray = cv2.cvtColor(bgr, cv2.COLOR_BGR2GRAY)
+    w = gray.shape[1]
+    for (right0, top, right1, bottom), ref in _SHOP_BUTTONS:
+        region = gray[top:bottom, w - right0:w - right1]
+        if region.size == 0:
+            continue
+        thumb = cv2.resize(region, (12, 6), interpolation=cv2.INTER_AREA).astype(int)
+        if np.abs(thumb - ref).mean() < SHOP_MATCH:  # either button is enough (the mouse may hover one)
+            return True
+    return False
+
+
 def frame_quality(img) -> int:
     """How much of the village a frame shows: number of structure badges found."""
     return sum(1 for b in find_badges(img) if b.structure)
