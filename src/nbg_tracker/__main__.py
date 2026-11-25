@@ -73,7 +73,8 @@ class Tracker:
             self.status["watching"] = None
             log.warning("game log not found; pass --log to point at it")
         else:
-            tailer = LogTailer(log_path, NorthgardLogParser(), emit)
+            tailer = LogTailer(log_path, NorthgardLogParser(), emit,
+                               catch_up=lambda on: setattr(recorder, "saving", not on))
             tailer.start()
             watchers.append(tailer)
             self.status["watching"] = str(log_path)

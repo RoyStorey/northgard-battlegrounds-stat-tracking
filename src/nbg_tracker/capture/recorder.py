@@ -43,6 +43,7 @@ class Recorder:
         self.cards: list[Card] = []
         self.shot: str | None = None
         self.paused = False
+        self.saving = True  # off while catching up on a log written before the tracker started
         self._lock = threading.Lock()
 
     def live(self) -> dict:
@@ -140,6 +141,8 @@ class Recorder:
         run, self.run = self.run, None
         if run is None or not run.battles:
             return
+        if not self.saving:
+            return  # finished before the tracker started; it was saved then, or can be imported
         run.elo_after = elo
         run.ended_at = time or _now()
         self.db.save_run(run)

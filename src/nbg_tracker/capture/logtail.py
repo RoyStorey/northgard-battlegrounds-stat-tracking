@@ -41,12 +41,17 @@ def candidate_logs() -> list[Path]:
 
 class LogTailer:
     def __init__(self, path: str | Path, parser: LineParser, emit: Callable[[dict], None],
-                 from_start: bool = False, poll: float = 0.5):
+                 from_start: bool = False, poll: float = 0.5,
+                 catch_up: Callable[[bool], None] | None = None):
+        """from_start: treat the whole existing log as new.
+        catch_up: otherwise, the existing log is still parsed (so a run already in
+        progress is known) between catch_up(True) and catch_up(False)."""
         self.path = Path(path)
         self.parser = parser
         self.emit = emit
         self.from_start = from_start
         self.poll = poll
+        self.catch_up = catch_up
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
 
@@ -70,7 +75,14 @@ class LogTailer:
                 self._stop.wait(self.poll)
                 continue
             if offset is None:
-                offset = 0 if self.from_start else size
+                if self.from_start:
+                    offset = 0
+                elif self.catch_up is None:
+                    offset = size
+                else:
+                    offset, buf = self._catch_up()
+                    self._stop.wait(self.poll)
+                    continue
             if size < offset:  # the game truncates its log on launch
                 offset, buf = 0, ""
             if size > offset:
@@ -82,6 +94,18 @@ class LogTailer:
                 for line in lines:
                     self.feed(line)
             self._stop.wait(self.poll)
+
+    def _catch_up(self) -> tuple[int, str]:
+        self.catch_up(True)
+        try:
+            with open(self.path, "r", encoding="utf-8", errors="replace") as f:
+                *lines, rest = f.read().split("\n")
+                offset = f.tell()
+            for line in lines:
+                self.feed(line)
+        finally:
+            self.catch_up(False)
+        return offset, rest
 
     def feed(self, line: str) -> None:
         try:

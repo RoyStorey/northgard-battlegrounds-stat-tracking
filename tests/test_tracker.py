@@ -337,3 +337,37 @@ def test_tray_stops_on_ctrl_c(monkeypatch):
     monkeypatch.setattr(tray.threading, "Event", Done)
     tray.run_tray("http://x/", types.SimpleNamespace(paused=False), {})
     assert stopped.is_set()
+
+
+def test_tracker_started_mid_run_catches_up(tmp_path):
+    import time
+    from nbg_tracker.capture.nbg_log import NorthgardLogParser
+
+    lines = (FIXTURES / "player_log_two_runs.log").read_text().splitlines()
+    # cut the log in the middle of the second run: the first run is over, the second is under way
+    cut = [i for i, l in enumerate(lines) if l.startswith("Starting season: Summer")][1]
+    log_file = tmp_path / "Player.log"
+    log_file.write_text("\n".join(lines[:cut]) + "\n")
+
+    db = Database(tmp_path / "t.db")
+    rec = Recorder(db)
+    tailer = LogTailer(log_file, NorthgardLogParser(), rec.handle, poll=0.01,
+                       catch_up=lambda on: setattr(rec, "saving", not on))
+    tailer.start()
+    for _ in range(200):
+        if rec.live().get("in_run") and rec.saving:
+            break
+        time.sleep(0.01)
+    live = rec.live()
+    assert live["in_run"] and (live["wins"], live["losses"], live["round"]) == (2, 1, 5)
+    assert db.load_runs() == []  # the run that finished before startup is not saved again
+
+    with open(log_file, "a") as f:  # the game carries on
+        f.write("\n".join(lines[cut:]) + "\n")
+    for _ in range(200):
+        if db.load_runs():
+            break
+        time.sleep(0.01)
+    tailer.stop()
+    [run] = db.load_runs()
+    assert (run.wins, run.losses, run.elo_after) == (10, 4, 115)
