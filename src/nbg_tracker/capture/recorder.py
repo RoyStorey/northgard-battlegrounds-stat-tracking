@@ -21,7 +21,9 @@ from datetime import datetime, timezone
 from typing import Callable
 
 from ..db import Database
-from ..models import Battle, Card, Run, Structure
+from ..models import LIVES, ROUNDS_PER_SEASON, WINS_TO_CLEAR, Battle, Card, Run, Structure
+
+SEASONS = ["Spring", "Summer", "Autumn", "Winter"]
 
 log = logging.getLogger(__name__)
 
@@ -42,6 +44,26 @@ class Recorder:
         self.shot: str | None = None
         self.paused = False
         self._lock = threading.Lock()
+
+    def live(self) -> dict:
+        """The run in progress, for the dashboard."""
+        with self._lock:
+            run = self.run
+            if run is None:
+                return {"in_run": False}
+            next_round = len(run.battles) + 1
+            return {
+                "in_run": True,
+                "clan": run.clan, "mode": run.mode, "elo_before": run.elo_before,
+                "started_at": run.started_at,
+                "round": next_round,
+                "season": SEASONS[min((next_round - 1) // ROUNDS_PER_SEASON, len(SEASONS) - 1)],
+                "wins": run.wins, "losses": run.losses,
+                "wins_to_go": max(0, WINS_TO_CLEAR - run.wins),
+                "lives_left": max(0, LIVES - run.losses),
+                "battles": [{"round": b.round, "won": b.won, "kind": b.kind} for b in run.battles],
+                "cards": [{"name": c.name, "god": c.god, "kind": c.kind} for c in self.cards],
+            }
 
     def handle(self, event: dict) -> None:
         if self.paused:

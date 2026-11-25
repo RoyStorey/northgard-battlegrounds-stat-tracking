@@ -76,6 +76,29 @@ td { border-bottom: 1px solid var(--grid); padding: 6px 8px 6px 0; vertical-alig
 td.num, th.num { text-align: right; }
 .scroll { overflow-x: auto; }
 .empty { color: var(--ink-2); padding: 24px 0; text-align: center; }
+/* current run */
+#live { border-color: var(--pos); }
+#live[hidden] { display: none; }
+.live-head { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 12px; align-items: baseline; }
+.live-stats { display: flex; flex-wrap: wrap; gap: 8px 28px; margin: 10px 0; }
+.live-stats .value { font-size: 24px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.live-stats .label { color: var(--ink-2); font-size: 12px; }
+.chips { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 12px; }
+.chip { font-size: 12px; padding: 2px 7px; border-radius: 999px; border: 1px solid var(--border); font-variant-numeric: tabular-nums; }
+.chip.w { background: var(--pos); border-color: var(--pos); color: #fff; }
+.chip.l { border: 1px solid var(--neg); }
+.chip.pve { opacity: .65; }
+.live-board { display: grid; grid-template-columns: minmax(0, 3fr) minmax(220px, 2fr); gap: 12px; align-items: start; }
+@media (max-width: 760px) { .live-board { grid-template-columns: 1fr; } }
+.shot { position: relative; line-height: 0; }
+.shot img { width: 100%; border-radius: 6px; }
+.shot .dot { position: absolute; width: 10px; height: 10px; border-radius: 50%; transform: translate(-50%, -50%);
+  background: var(--pos); border: 2px solid #fff; box-shadow: 0 0 0 1px rgba(0,0,0,.5); }
+.pieces { width: 100%; border-collapse: collapse; font-size: 13px; }
+.pieces td { padding: 5px 6px 5px 0; border-bottom: 1px solid var(--grid); }
+.pieces .mini { position: relative; width: 70px; height: 10px; }
+.pieces .mini::before { content: ""; position: absolute; left: 50%; top: -2px; bottom: -2px; width: 1px; background: var(--axis); }
+.pieces .mini span { position: absolute; top: 1px; height: 8px; }
 #tip { position: fixed; pointer-events: none; background: var(--surface); color: var(--ink);
   border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; font-size: 12px;
   box-shadow: 0 4px 16px rgba(0,0,0,.15); display: none; max-width: 260px; z-index: 10; }
@@ -96,6 +119,13 @@ a { color: var(--pos); }
     <select id="f-clan" aria-label="Clan"><option value="">All clans</option></select>
     <select id="f-mode" aria-label="Mode"><option value="">All modes</option></select>
   </div>
+
+  <section class="card" id="live" hidden aria-live="polite">
+    <div class="live-head"><h2 id="live-title">Current run</h2><span class="status" id="live-sub"></span></div>
+    <div class="live-stats" id="live-stats"></div>
+    <div class="chips" id="live-chips"></div>
+    <div class="live-board" id="live-board"></div>
+  </section>
 
   <section class="tiles" id="tiles"></section>
 
@@ -281,8 +311,42 @@ $("#tabs").addEventListener("click", (e) => {
   renderImpact();
 });
 ["#f-patch", "#f-clan", "#f-mode"].forEach((s) => $(s).addEventListener("change", load));
+async function loadLive() {
+  let st;
+  try { st = await (await fetch("/api/live")).json(); } catch { return; }
+  const card = $("#live");
+  if (!st.in_run) { card.hidden = true; return; }
+  card.hidden = false;
+  $("#live-title").textContent = `Current run · Round ${st.round} · ${st.season}`;
+  $("#live-sub").textContent = [st.clan !== "Unknown" ? st.clan : "", st.mode || "", st.elo_before != null ? `ELO ${st.elo_before}` : ""].filter(Boolean).join(" · ");
+  $("#live-stats").innerHTML = [["Wins", `${st.wins}<small style="color:var(--ink-2);font-size:14px"> / 10</small>`],
+    ["Losses", st.losses], ["Lives left", st.lives_left === 0 ? "Last chance" : st.lives_left]]
+    .map(([l, v]) => `<div><div class="label">${l}</div><div class="value">${v}</div></div>`).join("");
+  $("#live-chips").innerHTML = st.battles.map((b) =>
+    `<span class="chip ${b.won ? "w" : "l"}${b.kind === "pve" ? " pve" : ""}" title="Round ${b.round}${b.kind === "pve" ? " (PvE)" : ""}: ${b.won ? "won" : "lost"}">R${b.round} ${b.kind === "pve" ? "PvE " : ""}${b.won ? "W" : "L"}</span>`).join("")
+    || `<span class="status">No battles yet.</span>`;
+  const board = st.board;
+  if (!board) { $("#live-board").innerHTML = `<div class="status">The board appears here once the tracker has a screenshot of it.</div>`; return; }
+  const rows = [...board.structures].sort((a, b) => ((b.history?.impact ?? -999) - (a.history?.impact ?? -999)));
+  const max = Math.max(5, ...rows.map((r) => Math.abs(r.history?.impact ?? 0)));
+  $("#live-board").innerHTML = `<div class="shot"><img src="/shots/live.jpg?t=${encodeURIComponent(board.updated)}" alt="Your board right now">` +
+    board.structures.map((s) => `<span class="dot" style="left:${s.x * 100}%;top:${s.y * 100}%" title="${esc(s.name)}"></span>`).join("") + `</div>` +
+    `<div><p class="sub" style="margin:0 0 6px">Your record with each piece on the board, from past runs.</p><table class="pieces"><tbody>` +
+    (rows.length ? rows.map((s) => {
+      const h = s.history;
+      if (!h) return `<tr><td>${esc(s.name === "?" ? "Unrecognised" : s.name)}</td><td colspan="2" class="status">${s.name === "?" ? "name it in review" : "no history yet"}</td></tr>`;
+      const w = Math.abs(h.impact) / max * 50;
+      const bar = h.impact >= 0 ? `left:50%;width:${w}%;background:var(--pos);border-radius:0 4px 4px 0` : `right:50%;width:${w}%;background:var(--neg);border-radius:4px 0 0 4px`;
+      return `<tr title="${h.battles} battles · ${pct(h.win_rate)} won · evidence ${h.confidence}"><td>${esc(s.name)}${s.level > 1 ? " " + s.level : ""}</td>
+        <td><div class="mini"><span style="${bar}${h.confidence === "low" ? ";opacity:.45" : ""}"></span></div></td>
+        <td class="num">${h.impact > 0 ? "+" : ""}${num(h.impact)} <span class="status">${h.battles} b</span></td></tr>`;
+    }).join("") : `<tr><td class="status">No structures found yet.</td></tr>`) + `</tbody></table></div>`;
+}
+
 load();
+loadLive();
 setInterval(load, 15000);
+setInterval(loadLive, 5000);
 </script>
 </body>
 </html>

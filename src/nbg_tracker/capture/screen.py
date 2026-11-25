@@ -93,6 +93,8 @@ class ScreenCapturer:
         self.latest: Image.Image | None = None
         self.latest_quality = -1
         self.round = 0
+        self.live: dict | None = None  # the board right now, for the dashboard's current-run panel
+        self._live_at = 0.0
         self._lock = threading.Lock()
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
@@ -124,14 +126,30 @@ class ScreenCapturer:
                         log.exception("frame check failed")
                         q = 0
                     with self._lock:
-                        if q >= self.latest_quality:  # ties go to the newer frame
+                        better = q >= self.latest_quality  # ties go to the newer frame
+                        if better:
                             self.latest, self.latest_quality = img, q
+                    if better and time.monotonic() - self._live_at > 4:
+                        self._update_live(img)
             self._stop.wait(self.interval)
+
+    def _update_live(self, img: Image.Image) -> None:
+        self._live_at = time.monotonic()
+        try:
+            found = self.recognizer.recognize(img) if self.recognizer else []
+            tmp = self.shots_dir / "live.tmp.jpg"
+            img.save(tmp, format="JPEG", quality=80)
+            tmp.replace(self.shots_dir / "live.jpg")
+        except Exception:
+            log.exception("live board update failed")
+            return
+        self.live = {"file": "live.jpg", "updated": datetime.now().isoformat(timespec="seconds"),
+                     "structures": [{"name": s.name, "level": s.level, "x": s.x, "y": s.y} for s in found]}
 
     def __call__(self, event: dict) -> None:
         kind = event.get("type")
         if kind == "run_start":
-            self.round = 0
+            self.round, self.live = 0, None
             self._begin_build()
         elif kind == "battle_result":
             self.round = event.get("round", self.round + 1)
@@ -139,7 +157,7 @@ class ScreenCapturer:
         elif kind == "opponent" and self.building:
             self._battle_starting()
         elif kind == "run_end":
-            self.building = False
+            self.building, self.live = False, None
         self.emit(event)
 
     def _begin_build(self) -> None:

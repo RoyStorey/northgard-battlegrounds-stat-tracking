@@ -21,6 +21,9 @@ gods and clans are winning for you.
   screenshot shows the structures found, named where the tracker recognises them
   ("?" where it doesn't yet). Your names train the recogniser, so it fills boards in
   by itself after a run or two. Levels are set there too (not read from the screen yet).
+- **Current run**: while a run is in progress, the top of the dashboard shows the
+  round, wins, losses and lives left, each battle so far, and your board right now
+  with your past record for every structure on it.
 - **Names** come from the game's `StreamingAssets/aa/catalog.bin`, found through the
   install path in the log, with a bundled copy as fallback. The save file is
   encrypted, so it is not read.

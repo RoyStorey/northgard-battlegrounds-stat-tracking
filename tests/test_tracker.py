@@ -278,3 +278,27 @@ def test_review_api_saves_labels(tmp_path):
     assert client.get("/api/pieces").json() == {"structures": ["Mine", "Wolf Den"]}
     assert client.get("/shots/../t.db").status_code == 404
     assert client.put("/api/battles/999/structures", json=[]).status_code == 404
+
+
+def test_live_run_state(tmp_path):
+    db = Database(tmp_path / "t.db")
+    db.save_run(make_run("Wolf", [True] * 4, ["Wolf Den"]))
+    rec = Recorder(db)
+    assert rec.live() == {"in_run": False}
+    for e in [{"type": "run_start", "clan": "Wolf", "mode": "ranked"},
+              {"type": "battle_result", "round": 1, "won": True, "kind": "pve"},
+              {"type": "battle_result", "round": 2, "won": False},
+              {"type": "battle_result", "round": 3, "won": True},
+              {"type": "battle_result", "round": 4, "won": True},
+              {"type": "battle_result", "round": 5, "won": False, "kind": "pve"}]:
+        rec.handle(e)
+    live = rec.live()
+    assert (live["round"], live["season"], live["wins"], live["losses"], live["lives_left"]) == (6, "Summer", 2, 1, 4)
+
+    board = {"file": "live.jpg", "updated": "now", "structures": [
+        {"name": "Wolf Den", "level": 1, "x": 0.5, "y": 0.5}, {"name": "?", "level": 1, "x": 0.2, "y": 0.2}]}
+    client = TestClient(create_app(db, live=lambda: dict(rec.live(), board=board)))
+    got = client.get("/api/live").json()
+    assert got["in_run"] and got["wins"] == 2
+    den, unknown = got["board"]["structures"]
+    assert den["history"]["battles"] == 4 and unknown["history"] is None

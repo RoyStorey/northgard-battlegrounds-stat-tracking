@@ -22,7 +22,8 @@ def _page(name: str) -> str:
 
 def create_app(db: Database, status: dict | None = None, shots_dir: str | Path | None = None,
                structure_names: list[str] | None = None,
-               on_reviewed: Callable[[], None] | None = None) -> FastAPI:
+               on_reviewed: Callable[[], None] | None = None,
+               live: Callable[[], dict] | None = None) -> FastAPI:
     app = FastAPI(title="Northgard Battlegrounds Tracker")
     status = status if status is not None else {}
     shots = Path(shots_dir) if shots_dir else None
@@ -44,6 +45,17 @@ def create_app(db: Database, status: dict | None = None, shots_dir: str | Path |
     @app.get("/api/report")
     def report(patch: str | None = None, clan: str | None = None, mode: str | None = None) -> dict:
         return stats.report(db.load_runs(), patch or None, clan or None, mode or None) | {"status": status}
+
+    @app.get("/api/live")
+    def live_run() -> dict:
+        state = live() if live else {"in_run": False}
+        board = state.get("board") or {}
+        if board.get("structures"):
+            history = {r["name"]: r for r in stats.report(db.load_runs())["structures"]}
+            for s in board["structures"]:
+                h = history.get(s["name"])
+                s["history"] = {k: h[k] for k in ("impact", "battles", "win_rate", "confidence")} if h else None
+        return state
 
     @app.get("/api/pieces")
     def pieces() -> dict:

@@ -31,14 +31,22 @@ class Tracker:
         self.shots = db.path.parent / "shots"
         self.shots.mkdir(parents=True, exist_ok=True)
         self.recognizer = Recognizer(self.shots)
+        self.recorder: Recorder | None = None
+        self.capturer: ScreenCapturer | None = None
         self.retrain()
+
+    def live(self) -> dict:
+        state = self.recorder.live() if self.recorder else {"in_run": False}
+        if state.get("in_run") and self.capturer and self.capturer.live:
+            state["board"] = dict(self.capturer.live, structures=[dict(s) for s in self.capturer.live["structures"]])
+        return state
 
     def retrain(self) -> None:
         threading.Thread(target=lambda: self.recognizer.train(self.db.labelled_structures(), self.db.reviewed_shots()),
                          name="train", daemon=True).start()
 
     def serve(self, port: int, background: bool) -> None:
-        app = create_app(self.db, self.status, self.shots, self.gd.structure_names(), self.retrain)
+        app = create_app(self.db, self.status, self.shots, self.gd.structure_names(), self.retrain, self.live)
         server = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning"))
         if background:
             threading.Thread(target=server.run, name="dashboard", daemon=True).start()
@@ -47,12 +55,14 @@ class Tracker:
 
     def watch(self, log_path: Path | None, screenshots: bool) -> tuple[Recorder, list]:
         recorder = Recorder(self.db, on_saved=lambda r: self.status.update(last_saved_run=r.id))
+        self.recorder = recorder
         sink = recorder.handle
         watchers: list = []
         if screenshots:
             try:
                 capturer = ScreenCapturer(recorder.handle, self.shots, self.recognizer)
                 capturer.start()
+                self.capturer = capturer
                 watchers.append(capturer)
                 sink = capturer
                 self.status["screenshots"] = True
