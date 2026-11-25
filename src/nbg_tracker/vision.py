@@ -7,6 +7,8 @@ move with it, though:
   same size at any zoom. Badges are found by template matching against a
   drawn hexagon rim. A tile with a structure has a number box beside its
   badge; an empty tile has a bare hex.
+* The number at the end of a structure's box is its level, read by matching
+  the digits 1-3.
 * The gap between neighbouring badges tells the local zoom, so each structure
   can be cropped (above and right of its badge) at a consistent size.
 
@@ -63,6 +65,39 @@ def _badge_template(size: int = 48) -> tuple[np.ndarray, np.ndarray]:
 
 _TEMPLATE, _MASK = _badge_template()
 
+# The level digits as drawn in the badge's number box at 1080p (# = dark ink).
+_DIGITS = {
+    1: [".....#", "######", "######", "...###", "...###", "...###", "...###", "...###", "...###", "...###",
+        "...###", "...###", "...###", "...###"],
+    2: ["..######..", ".###.####.", "##.....##.", "##.....##.", ".......##.", "......###.", "......##..",
+        ".....##...", "...###....", "...##.....", "..###.....", ".#########", "##########"],
+    3: ["...#####..", "..##..###.", ".##....##.", ".......###", ".......##.", ".....###..", ".....###..",
+        ".......##.", "........##", "###.....##", ".##....###", ".#########", "..#######."],
+}
+_DIGIT_TEMPLATES = {
+    level: cv2.copyMakeBorder(np.array([[60 if c == "#" else 150 for c in row] for row in rows], np.uint8),
+                              2, 2, 2, 2, cv2.BORDER_CONSTANT, value=150)
+    for level, rows in _DIGITS.items()
+}
+DIGIT_MATCH = 0.7  # real digits score 0.76-0.90, the wrong digits <= 0.67
+DIGIT_MARGIN = 0.08
+
+
+def read_level(gray: np.ndarray, x: int, y: int) -> int | None:
+    """The level in the number box right of a badge at (x, y), on a 1080p grey image."""
+    region = gray[max(0, y - 12):y + 12, x + 24:x + 240]
+    scores = {}
+    for level, t in _DIGIT_TEMPLATES.items():
+        if region.shape[0] >= t.shape[0] and region.shape[1] >= t.shape[1]:
+            scores[level] = float(cv2.matchTemplate(region, t, cv2.TM_CCOEFF_NORMED).max())
+    if not scores:
+        return None
+    ranked = sorted(scores.values(), reverse=True)
+    best = max(scores, key=scores.get)
+    if ranked[0] < DIGIT_MATCH or (len(ranked) > 1 and ranked[0] - ranked[1] < DIGIT_MARGIN):
+        return None
+    return best
+
 
 @dataclass
 class Badge:
@@ -70,6 +105,7 @@ class Badge:
     y: float
     gap: float  # distance to the nearest neighbouring badge (local zoom)
     structure: bool
+    level: int | None = None  # read from the number box; None if unreadable
 
     def centre(self) -> tuple[float, float]:
         """Where the structure itself sits: above and to the right of its badge."""
@@ -110,7 +146,9 @@ def find_badges(img) -> list[Badge]:
         gap = min(others) if others else 220.0
         if gap > 320:
             gap = 220.0
-        badges.append(Badge(x / scale, y / scale, gap / scale, _has_box(bgr, x, y)))
+        structure = _has_box(bgr, x, y)
+        level = read_level(gray, x, y) if structure else None
+        badges.append(Badge(x / scale, y / scale, gap / scale, structure, level))
     return badges
 
 
@@ -195,6 +233,8 @@ class Recognizer:
                         i = int(d.argmin())
                         if d[i] < MATCH_DISTANCE:
                             name, level = self.labels[i]
+            if b.level is not None:
+                level = b.level  # the badge's number beats the level of the matched example
             out.append(Structure(name, level, round(cx / w, 4), round(max(cy, 0) / h, 4), "auto"))
         return out
 

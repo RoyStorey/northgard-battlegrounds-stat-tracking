@@ -20,7 +20,7 @@ gods and clans are winning for you.
 - **Review page**: after a run, open it from the dashboard's run list. Each round's
   screenshot shows the structures found, named where the tracker recognises them
   ("?" where it doesn't yet). Your names train the recogniser, so it fills boards in
-  by itself after a run or two. Levels are set there too (not read from the screen yet).
+  by itself after a run or two. Levels are read from the number in each badge.
 - **Current run**: while a run is in progress, the top of the dashboard shows the
   round, wins, losses and lives left, each battle so far, and your board right now
   with your past record for every structure on it.

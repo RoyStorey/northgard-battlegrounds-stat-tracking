@@ -406,3 +406,13 @@ def test_battle_view_frames_are_skipped(tmp_path):
     cap.stop()
     board = next(e for e in out if e["type"] == "board")
     assert len(board["structures"]) == 1  # only your own village
+
+
+def test_levels_read_from_badges():
+    from nbg_tracker.vision import _DIGIT_TEMPLATES, find_badges
+    img = _board_image([("Mine", *GRID[0]), ("Farm", *GRID[1]), ("Wolf Den", *GRID[2])], empty=[GRID[3]])
+    for (x, y), level in zip(GRID[:3], (1, 2, 3)):
+        t = _DIGIT_TEMPLATES[level]
+        img[y - t.shape[0] // 2:y - t.shape[0] // 2 + t.shape[0], x + 40:x + 40 + t.shape[1]] = t[:, :, None]
+    found = {(round(b.x), round(b.y)): b.level for b in find_badges(img)}
+    assert found == {GRID[0]: 1, GRID[1]: 2, GRID[2]: 3, GRID[3]: None}
