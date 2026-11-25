@@ -87,3 +87,22 @@ def test_api(tmp_path):
     rep = client.get("/api/report", params={"clan": "Stag"}).json()
     assert rep["summary"]["runs"] == 1 and rep["filters"]["clans"] == ["Stag"]
     assert client.post("/api/runs", json={"battles": []}).status_code == 422
+
+
+def test_northgard_log_parser(tmp_path):
+    from pathlib import Path
+    from nbg_tracker.capture.nbg_log import NorthgardLogParser
+
+    db = Database(tmp_path / "t.db")
+    rec = Recorder(db)
+    tailer = LogTailer("unused", NorthgardLogParser(), rec.handle)
+    for line in (Path(__file__).parent / "fixtures" / "player_log_two_runs.log").read_text().splitlines():
+        tailer.feed(line)
+    runs = db.load_runs()
+    assert [(r.wins, r.losses, r.mode, r.elo_before, r.elo_after) for r in runs] == [
+        (2, 6, "ranked", 101, 87),
+        (10, 4, "ranked", 87, 115),
+    ]
+    assert runs[1].cleared and not runs[0].cleared
+    assert len(runs[1].battles) == 18
+    assert [b.round for b in runs[1].battles if b.kind == "pve"] == [1, 5, 9, 13]

@@ -2,6 +2,8 @@
 
 Event types (dicts with a "type" key):
   run_start          clan, warchief?, patch?, mode?, elo?, time?
+  run_info           mode?, elo?   (fills in a run already started)
+  opponent           name
   board              structures: [{name, level}], cards?: [{name, god, kind}]
   structure_placed   name, level?
   structure_upgraded name, level
@@ -54,6 +56,16 @@ class Recorder:
                        mode=e.get("mode"), started_at=e.get("time") or _now(),
                        elo_before=e.get("elo"), source=self.source)
         self.structures, self.cards = [], []
+
+    def _on_run_info(self, e: dict) -> None:
+        if self.run is None:
+            return
+        self.run.mode = e.get("mode") or self.run.mode
+        if self.run.elo_before is None:
+            self.run.elo_before = e.get("elo")
+
+    def _on_opponent(self, e: dict) -> None:
+        pass  # opponent names are not stored
 
     def _on_board(self, e: dict) -> None:
         self.structures = [Structure(s["name"], int(s.get("level", 1))) for s in e.get("structures", [])]

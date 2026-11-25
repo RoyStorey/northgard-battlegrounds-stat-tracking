@@ -9,10 +9,10 @@ gods and clans are winning for you.
 
 ## Status
 
-Storage, statistics and the dashboard work. The game-log parser
-(`src/nbg_tracker/capture/nbg_log.py`) is **not written yet**: it needs a look at
-the log files a real install writes. Until then, runs can be added through the
-API or replayed from an event file.
+Storage, statistics, the dashboard and the game-log parser work. The log gives
+runs, battle results (PvE vs PvP), ranked/unranked and ELO. Structures, cards
+and clan are not in the log; reading them from the save file is next. Runs can
+also be added through the API or replayed from an event file.
 
 ## Install and run (Windows)
 
