@@ -302,3 +302,38 @@ def test_live_run_state(tmp_path):
     assert got["in_run"] and got["wins"] == 2
     den, unknown = got["board"]["structures"]
     assert den["history"]["battles"] == 4 and unknown["history"] is None
+
+
+def test_tray_stops_on_ctrl_c(monkeypatch):
+    import sys
+    import threading
+    import types
+    from nbg_tracker import tray
+
+    stopped = threading.Event()
+
+    class FakeIcon:
+        def __init__(self, *a, **k):
+            pass
+
+        def run(self):
+            stopped.wait(5)
+
+        def stop(self):
+            stopped.set()
+
+    fake = types.SimpleNamespace(Icon=FakeIcon, Menu=lambda *a: None, MenuItem=lambda *a, **k: None)
+    monkeypatch.setitem(sys.modules, "pystray", fake)
+    monkeypatch.setattr(sys, "platform", "win32")
+    calls = iter([False, KeyboardInterrupt()])
+
+    class Done(threading.Event):
+        def wait(self, timeout=None):
+            v = next(calls, True)
+            if isinstance(v, BaseException):
+                raise v
+            return v or super().wait(0)
+
+    monkeypatch.setattr(tray.threading, "Event", Done)
+    tray.run_tray("http://x/", types.SimpleNamespace(paused=False), {})
+    assert stopped.is_set()

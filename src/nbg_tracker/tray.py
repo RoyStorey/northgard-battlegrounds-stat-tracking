@@ -1,6 +1,8 @@
 """System tray icon: open dashboard, pause recording, quit."""
 from __future__ import annotations
 
+import sys
+import threading
 import webbrowser
 
 from .capture import Recorder
@@ -30,4 +32,27 @@ def run_tray(url: str, recorder: Recorder, status: dict) -> None:
         pystray.MenuItem("Pause recording", toggle_pause, checked=lambda it: recorder.paused),
         pystray.MenuItem("Quit", lambda i, it: i.stop()),
     )
-    pystray.Icon("nbg-tracker", _icon_image(), "Northgard Battlegrounds Tracker", menu).run()
+    icon = pystray.Icon("nbg-tracker", _icon_image(), "Northgard Battlegrounds Tracker", menu)
+    if sys.platform == "darwin":  # macOS needs the icon on the main thread
+        icon.run()
+        return
+
+    # The icon's message loop blocks inside the OS, where Python can't see Ctrl+C,
+    # so it runs on its own thread while the main thread waits in short steps.
+    done = threading.Event()
+
+    def run_icon() -> None:
+        try:
+            icon.run()
+        finally:
+            done.set()
+
+    threading.Thread(target=run_icon, name="tray", daemon=True).start()
+    print(f"Tracker running in the system tray. Dashboard: {url}  (Ctrl+C or tray > Quit to stop)")
+    try:
+        while not done.wait(0.5):
+            pass
+    except KeyboardInterrupt:
+        print("stopping...")
+        icon.stop()
+        done.wait(2)
