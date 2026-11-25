@@ -1,0 +1,223 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Review Board</title>
+<style>
+:root {
+  --page: #f9f9f9; --surface: #ffffff; --ink: #191919; --ink-2: #666666;
+  --grid: #e7e7e7; --axis: #c2c2c2; --border: rgba(11,11,11,0.10);
+  --accent: #257de0; --accent-ink: #ffffff; --good: #006c10;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --page: #0b0b0b; --surface: #191919; --ink: #efefef; --ink-2: #9c9c9c;
+    --grid: #303030; --axis: #474747; --border: rgba(255,255,255,0.10);
+    --accent: #338ced; --accent-ink: #ffffff; --good: #53c556;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --page: #0b0b0b; --surface: #191919; --ink: #efefef; --ink-2: #9c9c9c;
+  --grid: #303030; --axis: #474747; --border: rgba(255,255,255,0.10);
+  --accent: #338ced; --accent-ink: #ffffff; --good: #53c556;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--page); color: var(--ink);
+  font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+main { max-width: 1400px; margin: 0 auto; padding: 20px 16px 48px; }
+a { color: var(--accent); }
+h1 { font-size: 18px; margin: 4px 0 2px; }
+.sub { color: var(--ink-2); font-size: 13px; margin: 0 0 12px; }
+button, select, input { font: inherit; color: var(--ink); background: var(--surface);
+  border: 1px solid var(--border); border-radius: 6px; padding: 5px 10px; }
+button.primary { background: var(--accent); color: var(--accent-ink); border-color: transparent; }
+button[aria-current="true"] { border-color: var(--ink); font-weight: 600; }
+.rounds { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
+.layout { display: grid; grid-template-columns: 1fr 280px; gap: 12px; align-items: start; }
+@media (max-width: 900px) { .layout { grid-template-columns: 1fr; } }
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 12px; }
+.board { position: relative; cursor: crosshair; user-select: none; line-height: 0; }
+.board img { width: 100%; height: auto; border-radius: 6px; display: block; }
+/* a dot on the building, label floating above it so the building stays visible */
+.mark { position: absolute; width: 12px; height: 12px; padding: 0; transform: translate(-50%, -50%);
+  border-radius: 50%; background: var(--accent); border: 2px solid #fff; cursor: pointer;
+  box-shadow: 0 0 0 1px rgba(0,0,0,.5); }
+.mark span { position: absolute; left: 50%; bottom: calc(100% + 6px); transform: translateX(-50%);
+  line-height: 1.2; font-size: 12px; padding: 2px 7px; border-radius: 999px; white-space: nowrap;
+  background: var(--surface); color: var(--ink); border: 2px solid var(--accent); box-shadow: 0 1px 4px rgba(0,0,0,.35); }
+.mark.auto { background: var(--surface); }
+.mark.auto span { border-style: dashed; }
+.mark.sel span { background: var(--accent); color: var(--accent-ink); }
+.board.hide-labels .mark span { display: none; }
+.editor { display: grid; gap: 8px; margin-top: 8px; }
+.editor[hidden] { display: none; }
+.row { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.list { margin: 8px 0 0; padding: 0; list-style: none; font-size: 13px; }
+.list li { display: flex; justify-content: space-between; gap: 8px; padding: 4px 0; border-bottom: 1px solid var(--grid); }
+.list .tag { color: var(--ink-2); font-size: 11px; }
+.muted { color: var(--ink-2); font-size: 13px; }
+.saved { color: var(--good); font-size: 13px; }
+.empty { color: var(--ink-2); padding: 40px 0; text-align: center; line-height: 1.45; }
+kbd { border: 1px solid var(--border); border-radius: 4px; padding: 0 4px; font-size: 11px; }
+</style>
+</head>
+<body>
+<main>
+  <a href="/">← Dashboard</a>
+  <h1 id="title">Review board</h1>
+  <p class="sub">Click a building to name it, or click a label to change it. Dashed labels are the tracker's
+    guesses. Saving teaches it what your buildings look like.</p>
+  <div class="rounds" id="rounds" role="tablist" aria-label="Rounds"></div>
+  <div class="layout">
+    <section class="card"><div class="board" id="board"></div></section>
+    <aside class="card">
+      <div class="row" style="justify-content:space-between">
+        <strong id="round-title">Round</strong><span id="state" class="muted"></span>
+      </div>
+      <div class="editor" id="editor" hidden>
+        <label>Structure <input id="ed-name" list="names" autocomplete="off" style="width:100%"></label>
+        <div class="row">
+          <label>Level <select id="ed-level"><option>1</option><option>2</option><option>3</option></select></label>
+          <button id="ed-delete">Remove</button>
+          <button id="ed-done" class="primary">Done</button>
+        </div>
+      </div>
+      <ul class="list" id="list"></ul>
+      <div class="row" style="margin-top:12px">
+        <button id="copy-prev">Copy previous round</button>
+        <button id="toggle-labels" aria-pressed="false">Hide labels</button>
+        <button id="save" class="primary">Save &amp; next</button>
+      </div>
+      <p class="muted">Shortcuts: <kbd>Enter</kbd> save &amp; next, <kbd>Del</kbd> remove selected, <kbd>←</kbd>/<kbd>→</kbd> rounds.</p>
+    </aside>
+  </div>
+</main>
+<datalist id="names"></datalist>
+<script>
+const $ = (s) => document.querySelector(s);
+const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;"}[c]));
+const runId = new URLSearchParams(location.search).get("run");
+let run, battles = [], idx = 0, marks = [], sel = -1, dirty = false;
+
+async function init() {
+  const [r, p] = await Promise.all([fetch(`/api/runs/${runId}`), fetch("/api/pieces")]);
+  if (!r.ok) { $("#board").innerHTML = `<div class="empty">Run not found.</div>`; return; }
+  run = await r.json();
+  $("#names").innerHTML = (await p.json()).structures.map((n) => `<option value="${esc(n)}">`).join("");
+  battles = run.battles.filter((b) => b.screenshot);
+  $("#title").textContent = `${run.clan}${run.warchief ? " · " + run.warchief : ""} · ${run.wins}–${run.losses}` +
+    (run.mode ? ` · ${run.mode}` : "") + (run.started_at ? ` · ${run.started_at.slice(0, 10)}` : "");
+  if (!battles.length) {
+    $("#board").innerHTML = `<div class="empty">No screenshots for this run.<br>They are taken during the build phase while the game is the window in front.</div>`;
+    return;
+  }
+  const first = battles.findIndex((b) => !b.reviewed);
+  show(first < 0 ? 0 : first);
+}
+
+function renderRounds() {
+  $("#rounds").innerHTML = battles.map((b, i) =>
+    `<button role="tab" aria-current="${i === idx}" data-i="${i}">R${b.round}${b.kind === "pve" ? " PvE" : ""} ${b.reviewed ? "✓" : "•"}</button>`).join("");
+}
+
+function show(i) {
+  if (dirty && !confirm("Discard unsaved changes to this round?")) return;
+  idx = i; sel = -1; dirty = false;
+  const b = battles[i];
+  marks = b.structures.filter((s) => s.x != null).map((s) => ({...s}));
+  $("#round-title").textContent = `Round ${b.round} · ${b.won ? "won" : "lost"}${b.kind === "pve" ? " (PvE)" : ""}`;
+  $("#board").innerHTML = `<img src="/shots/${encodeURIComponent(b.screenshot)}" alt="Board before round ${b.round}" draggable="false">`;
+  renderRounds(); render();
+}
+
+function render() {
+  const board = $("#board");
+  board.querySelectorAll(".mark").forEach((m) => m.remove());
+  marks.forEach((m, i) => {
+    const el = document.createElement("button");
+    el.className = "mark" + (m.source === "auto" ? " auto" : "") + (i === sel ? " sel" : "");
+    el.style.left = m.x * 100 + "%"; el.style.top = m.y * 100 + "%";
+    const label = document.createElement("span");
+    label.textContent = (m.name || "?") + (m.level > 1 ? " " + m.level : "");
+    el.appendChild(label);
+    el.setAttribute("aria-label", label.textContent);
+    el.title = m.source === "auto" ? "Guess – click to confirm or change" : "";
+    el.addEventListener("click", (e) => { e.stopPropagation(); select(i); });
+    board.appendChild(el);
+  });
+  $("#list").innerHTML = marks.length ? marks.map((m, i) =>
+    `<li><span>${esc(m.name || "?")} <span class="tag">lvl ${m.level}${m.source === "auto" ? " · guess" : ""}</span></span>
+     <a href="#" data-i="${i}">edit</a></li>`).join("") : `<li class="muted">No structures marked.</li>`;
+  const b = battles[idx];
+  $("#state").innerHTML = dirty ? "Unsaved" : b.reviewed ? `<span class="saved">Saved</span>` : "Not reviewed";
+}
+
+function select(i) {
+  sel = i; const m = marks[i];
+  $("#editor").hidden = false;
+  $("#ed-name").value = m.name || ""; $("#ed-level").value = String(m.level || 1);
+  render(); $("#ed-name").focus(); $("#ed-name").select();
+}
+function deselect() {
+  if (sel >= 0 && !marks[sel].name) marks.splice(sel, 1);
+  sel = -1; $("#editor").hidden = true; render();
+}
+function change() { dirty = true; }
+
+$("#board").addEventListener("click", (e) => {
+  const img = $("#board img"); if (!img || e.target !== img) return;
+  const r = img.getBoundingClientRect();
+  if (sel >= 0) { deselect(); return; }
+  marks.push({name: "", level: 1, x: (e.clientX - r.left) / r.width, y: (e.clientY - r.top) / r.height, source: "user"});
+  change(); select(marks.length - 1);
+});
+$("#ed-name").addEventListener("input", () => { if (sel >= 0) { marks[sel].name = $("#ed-name").value; marks[sel].source = "user"; change(); render(); } });
+$("#ed-level").addEventListener("change", () => { if (sel >= 0) { marks[sel].level = +$("#ed-level").value; marks[sel].source = "user"; change(); render(); } });
+$("#ed-delete").addEventListener("click", () => { if (sel >= 0) { marks.splice(sel, 1); sel = -1; $("#editor").hidden = true; change(); render(); } });
+$("#ed-done").addEventListener("click", deselect);
+$("#ed-name").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); e.stopPropagation(); deselect(); } });
+$("#list").addEventListener("click", (e) => { const a = e.target.closest("a"); if (a) { e.preventDefault(); select(+a.dataset.i); } });
+$("#rounds").addEventListener("click", (e) => { const b = e.target.closest("button"); if (b) show(+b.dataset.i); });
+$("#copy-prev").addEventListener("click", () => {
+  const prev = battles[idx - 1]; if (!prev) return;
+  marks = prev.structures.filter((s) => s.x != null).map((s) => ({...s, source: "auto"}));
+  sel = -1; $("#editor").hidden = true; change(); render();
+});
+
+async function save() {
+  if (sel >= 0) deselect();
+  const b = battles[idx];
+  const body = marks.filter((m) => m.name.trim()).map(({name, level, x, y}) => ({name: name.trim(), level, x, y}));
+  const r = await fetch(`/api/battles/${b.id}/structures`, {method: "PUT", headers: {"Content-Type": "application/json"}, body: JSON.stringify(body)});
+  if (!r.ok) { alert("Could not save: " + (await r.text())); return; }
+  b.structures = body.map((m) => ({...m, source: "user"})); b.reviewed = true; dirty = false;
+  if (idx + 1 < battles.length) {
+    const next = battles[idx + 1];
+    if (!next.reviewed && !next.structures.some((s) => s.x != null)) {   // carry the board forward as a starting point
+      next.structures = b.structures.map((m) => ({...m, source: "auto"}));
+    }
+    show(idx + 1);
+  } else { renderRounds(); render(); }
+}
+$("#save").addEventListener("click", save);
+$("#toggle-labels").addEventListener("click", (e) => {
+  const on = $("#board").classList.toggle("hide-labels");
+  e.target.setAttribute("aria-pressed", on); e.target.textContent = on ? "Show labels" : "Hide labels";
+});
+
+document.addEventListener("keydown", (e) => {
+  if (e.target.matches("input, select")) return;
+  if (e.key === "Enter") { e.preventDefault(); save(); }
+  else if ((e.key === "Delete" || e.key === "Backspace") && sel >= 0) { marks.splice(sel, 1); sel = -1; $("#editor").hidden = true; change(); render(); }
+  else if (e.key === "ArrowRight" && idx + 1 < battles.length) show(idx + 1);
+  else if (e.key === "ArrowLeft" && idx > 0) show(idx - 1);
+  else if (e.key === "Escape") deselect();
+});
+init();
+</script>
+</body>
+</html>

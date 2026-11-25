@@ -81,6 +81,7 @@ td.num, th.num { text-align: right; }
   box-shadow: 0 4px 16px rgba(0,0,0,.15); display: none; max-width: 260px; z-index: 10; }
 #tip b { display: block; margin-bottom: 2px; }
 details { color: var(--ink-2); font-size: 13px; }
+a { color: var(--pos); }
 </style>
 </head>
 <body>
@@ -262,12 +263,15 @@ function renderTrend() {
 
 function renderRuns() {
   const rows = data.recent_runs;
-  $("#runs").innerHTML = rows.length ? `<table><thead><tr><th>Date</th><th>Clan</th><th class="num">W–L</th>
-    <th>Patch</th><th>Final board</th></tr></thead><tbody>` + rows.map((r) =>
+  const pending = rows.filter((r) => r.to_review).length;
+  $("#runs").innerHTML = (pending ? `<p class="sub">${pending} run${pending > 1 ? "s have" : " has"} boards to review. Reviewing teaches the tracker to read your boards.</p>` : "") +
+    (rows.length ? `<table><thead><tr><th>Date</th><th>Clan</th><th class="num">W–L</th>
+    <th>Patch</th><th>Final board</th><th>Board</th></tr></thead><tbody>` + rows.map((r) =>
     `<tr><td>${esc((r.started_at || "").slice(0, 10))}</td><td>${esc(r.clan)}${r.warchief ? " · " + esc(r.warchief) : ""}</td>
      <td class="num">${r.wins}–${r.losses}</td><td>${esc(r.patch || "")}</td>
-     <td>${esc(r.final_structures.join(", "))}</td></tr>`).join("") + "</tbody></table>"
-    : `<div class="empty">No runs recorded yet. Play a run with the tracker open and it will appear here.</div>`;
+     <td>${esc(r.final_structures.join(", "))}</td>
+     <td><a href="/review?run=${r.id}">${r.to_review ? "Review " + r.to_review : "View"}</a></td></tr>`).join("") + "</tbody></table>"
+    : `<div class="empty">No runs recorded yet. Play a run with the tracker open and it will appear here.</div>`);
 }
 
 $("#tabs").addEventListener("click", (e) => {

@@ -7,17 +7,18 @@ gods and clans are winning for you.
 - **Dashboard** at http://127.0.0.1:8765/ shows the stats.
 - Data stays on your PC in `%LOCALAPPDATA%\nbg-tracker\tracker.db`.
 
-## Status
+## How it records
 
 - **Player.log** gives each run, battle results (PvE vs PvP), ranked/unranked and ELO.
-- **Player data** gives the board: clan, structures with levels, runes, blessings,
-  god favor and cards bought. It is read from the save file, and from the log when
-  the game loads a run.
+- **Screenshots** of the game window are taken during each build phase (only while
+  the game is the window in front). The last one before each battle is kept in
+  `%LOCALAPPDATA%\nbg-tracker\shots`.
+- **Review page**: after a run, open it from the dashboard's run list. Each round's
+  screenshot shows the structures the tracker thinks are there; click to fix or add.
+  Your corrections train the recogniser, so it fills boards in by itself after a few runs.
 - **Names** come from the game's `StreamingAssets/aa/catalog.bin`, found through the
-  install path in the log. A copy of the names ships with the app as a fallback.
-  Fate cards show by their internal code (e.g. "Odin 101") for now.
-- Still to confirm: where the save file lives on disk. Use `--save PATH` if it isn't
-  found automatically.
+  install path in the log, with a bundled copy as fallback. The save file is
+  encrypted, so it is not read.
 
 Import an old log with `nbg-tracker replay "%USERPROFILE%\AppData\LocalLow\...\Player-prev.log"`.
 
@@ -29,7 +30,8 @@ nbg-tracker run
 ```
 
 - `nbg-tracker run --no-tray` runs in a console window instead of the tray.
-- `nbg-tracker run --log PATH --save PATH` points at the game log and save file if they aren't found automatically.
+- `nbg-tracker run --log PATH` points at the game log if it isn't found automatically.
+- `nbg-tracker run --no-screenshots` turns board capture off.
 - `nbg-tracker serve` opens the dashboard without watching the game.
 - `nbg-tracker replay FILE` imports runs from an old Player.log or a file of JSON events.
 

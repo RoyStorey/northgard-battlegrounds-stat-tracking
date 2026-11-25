@@ -116,6 +116,9 @@ class GameData:
             except Exception:
                 log.exception("could not read %s; using the bundled names", catalog)
 
+    def structure_names(self) -> list[str]:
+        return sorted({p.name for p in map(describe, self.assets.values()) if p.kind == "structure"})
+
     def piece(self, guid: str) -> Piece:
         asset = self.assets.get(guid)
         return describe(asset) if asset else Piece("other", f"Unknown {guid[:8]}")

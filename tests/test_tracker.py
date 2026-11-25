@@ -170,3 +170,88 @@ def test_read_catalog_if_available():
         pytest.skip("set NBG_CATALOG to the game's catalog.bin to run this")
     m = read_catalog(path)
     assert describe(m["e692742736efc0843acb2dd2084eaccf"]).name == "Stag"
+
+
+def _board_image(pieces, size=(800, 450), seed=0):
+    """A fake board: textured ground with distinct 'buildings' drawn at given spots."""
+    import numpy as np
+    from PIL import Image, ImageDraw
+    rng = np.random.default_rng(seed)
+    ground = (rng.normal(0, 6, (size[1], size[0], 3)) + [90, 120, 70]).clip(0, 255).astype("uint8")
+    img = Image.fromarray(ground)
+    d = ImageDraw.Draw(img)
+    styles = {"Healers Hut": ("ellipse", (230, 230, 240)), "Wolf Den": ("rect", (60, 40, 30)),
+              "Mine": ("tri", (150, 150, 160))}
+    for name, x, y in pieces:
+        shape, colour = styles[name]
+        cx, cy, r = x * size[0], y * size[1], 14
+        if shape == "ellipse":
+            d.ellipse((cx - r, cy - r, cx + r, cy + r), fill=colour)
+        elif shape == "rect":
+            d.rectangle((cx - r, cy - r / 2, cx + r, cy + r), fill=colour)
+        else:
+            d.polygon([(cx, cy - r), (cx + r, cy + r), (cx - r, cy + r)], fill=colour)
+    return img
+
+
+SLOTS = [(0.3, 0.4), (0.5, 0.4), (0.7, 0.4), (0.4, 0.7), (0.6, 0.7)]
+
+
+def test_recognizer_learns_from_reviewed_boards(tmp_path):
+    from nbg_tracker.vision import Recognizer
+
+    rec = Recognizer(tmp_path)
+    assert rec.recognize(_board_image([])) == []  # nothing learned yet
+    boards = [
+        [("Healers Hut", *SLOTS[0]), ("Wolf Den", *SLOTS[1])],
+        [("Wolf Den", *SLOTS[0]), ("Mine", *SLOTS[2]), ("Healers Hut", *SLOTS[3])],
+        [("Mine", *SLOTS[1]), ("Healers Hut", *SLOTS[4]), ("Wolf Den", *SLOTS[2])],
+        [("Mine", *SLOTS[3]), ("Wolf Den", *SLOTS[4]), ("Healers Hut", *SLOTS[1])],
+    ]
+    marks = []
+    for i, board in enumerate(boards):
+        _board_image(board, seed=i).save(tmp_path / f"b{i}.jpg", quality=90)
+        marks += [(f"b{i}.jpg", name, 1, x, y) for name, x, y in board]
+    rec.train(marks, [f"b{i}.jpg" for i in range(len(boards))])
+
+    new = [("Mine", *SLOTS[0]), ("Healers Hut", *SLOTS[2]), ("Wolf Den", *SLOTS[3])]
+    found = {(s.name, s.x, s.y) for s in rec.recognize(_board_image(new, seed=99))}
+    expected = {(n, x, y) for n, x, y in new}
+    assert {(n, round(x, 2), round(y, 2)) for n, x, y in found} == expected
+
+
+def test_screen_capturer_keeps_last_build_frame(tmp_path):
+    import time
+    from nbg_tracker.capture.screen import ScreenCapturer
+
+    out = []
+    frame = _board_image([("Mine", 0.5, 0.5)])
+    cap = ScreenCapturer(out.append, tmp_path, grab=lambda: frame, interval=0.01)
+    cap.start()
+    cap({"type": "run_start", "clan": "Unknown"})
+    time.sleep(0.1)
+    cap({"type": "opponent", "name": "x"})
+    cap.stop()
+    kinds = [e["type"] for e in out]
+    assert kinds == ["run_start", "screenshot", "opponent"]
+    assert (tmp_path / out[1]["file"]).is_file()
+
+
+def test_review_api_saves_labels(tmp_path):
+    called = []
+    db = Database(tmp_path / "t.db")
+    run = make_run("Wolf", [True, False], [])
+    run.battles[0].screenshot = "a.jpg"
+    db.save_run(run)
+    client = TestClient(create_app(db, shots_dir=tmp_path, structure_names=["Mine", "Wolf Den"],
+                                   on_reviewed=lambda: called.append(1)))
+    assert "Review" in client.get("/review").text
+    full = client.get(f"/api/runs/{run.id}").json()
+    bid = full["battles"][0]["id"]
+    body = [{"name": "Wolf Den", "level": 2, "x": 0.4, "y": 0.5}, {"name": "  ", "x": 0.1, "y": 0.1}]
+    assert client.put(f"/api/battles/{bid}/structures", json=body).json() == {"saved": 1}
+    assert called == [1]
+    assert db.labelled_structures() == [("a.jpg", "Wolf Den", 2, 0.4, 0.5)]
+    assert client.get("/api/pieces").json() == {"structures": ["Mine", "Wolf Den"]}
+    assert client.get("/shots/../t.db").status_code == 404
+    assert client.put("/api/battles/999/structures", json=[]).status_code == 404

@@ -13,6 +13,9 @@ LIVES = 5
 class Structure:
     name: str
     level: int = 1
+    x: float | None = None  # position on the battle's screenshot, 0-1
+    y: float | None = None
+    source: str | None = None  # auto (recognised), user (reviewed), save (game data)
 
 
 @dataclass
@@ -32,6 +35,9 @@ class Battle:
     opponent_clan: str | None = None
     structures: list[Structure] = field(default_factory=list)
     cards: list[Card] = field(default_factory=list)
+    screenshot: str | None = None  # file name in the shots folder
+    reviewed: bool = False
+    id: int | None = None
 
     @property
     def season(self) -> int:
@@ -80,6 +86,8 @@ class Run:
                 opponent_clan=b.get("opponent_clan"),
                 structures=[_structure(s) for s in b.get("structures", [])],
                 cards=[_card(c) for c in b.get("cards", [])],
+                screenshot=b.get("screenshot"),
+                reviewed=bool(b.get("reviewed", False)),
             )
             for b in d.get("battles", [])
         ]
@@ -92,7 +100,9 @@ class Run:
 
 
 def _structure(s: dict | str) -> Structure:
-    return Structure(s) if isinstance(s, str) else Structure(s["name"], int(s.get("level", 1)))
+    if isinstance(s, str):
+        return Structure(s)
+    return Structure(s["name"], int(s.get("level", 1)), s.get("x"), s.get("y"), s.get("source"))
 
 
 def _card(c: dict | str) -> Card:

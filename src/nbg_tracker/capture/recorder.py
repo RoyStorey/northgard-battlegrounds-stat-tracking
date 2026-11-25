@@ -4,7 +4,8 @@ Event types (dicts with a "type" key):
   run_start          clan, warchief?, patch?, mode?, elo?, time?
   run_info           clan?, mode?, elo?   (fills in a run already started)
   opponent           name
-  board              structures: [{name, level}], cards?: [{name, god, kind}]
+  board              structures: [{name, level, x?, y?, source?}], cards?: [{name, god, kind}]
+  screenshot         file   (the board just before the next battle)
   structure_placed   name, level?
   structure_upgraded name, level
   structure_removed  name
@@ -38,6 +39,7 @@ class Recorder:
         self.run: Run | None = None
         self.structures: list[Structure] = []
         self.cards: list[Card] = []
+        self.shot: str | None = None
         self.paused = False
         self._lock = threading.Lock()
 
@@ -55,7 +57,10 @@ class Recorder:
         self.run = Run(clan=e["clan"], warchief=e.get("warchief"), patch=e.get("patch"),
                        mode=e.get("mode"), started_at=e.get("time") or _now(),
                        elo_before=e.get("elo"), source=self.source)
-        self.structures, self.cards = [], []
+        self.structures, self.cards, self.shot = [], [], None
+
+    def _on_screenshot(self, e: dict) -> None:
+        self.shot = e.get("file")
 
     def _on_run_info(self, e: dict) -> None:
         if self.run is None:
@@ -70,7 +75,8 @@ class Recorder:
         pass  # opponent names are not stored
 
     def _on_board(self, e: dict) -> None:
-        self.structures = [Structure(s["name"], int(s.get("level", 1))) for s in e.get("structures", [])]
+        self.structures = [Structure(s["name"], int(s.get("level", 1)), s.get("x"), s.get("y"), s.get("source"))
+                           for s in e.get("structures", [])]
         if "cards" in e:
             self.cards = [Card(c["name"], c.get("god"), c.get("kind")) for c in e["cards"]]
 
@@ -99,9 +105,11 @@ class Recorder:
         self.run.battles.append(Battle(
             round=int(e["round"]), won=bool(e["won"]), kind=e.get("kind", "pvp"),
             opponent_clan=e.get("opponent_clan"),
-            structures=[Structure(s.name, s.level) for s in self.structures],
+            structures=[Structure(s.name, s.level, s.x, s.y, s.source) for s in self.structures],
             cards=[Card(c.name, c.god, c.kind) for c in self.cards],
+            screenshot=self.shot,
         ))
+        self.shot = None
 
     def _on_run_end(self, e: dict) -> None:
         self._finish(e.get("elo"), e.get("time"))

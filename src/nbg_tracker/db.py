@@ -61,6 +61,18 @@ class Database:
         self._conn.row_factory = sqlite3.Row
         self._conn.execute("PRAGMA foreign_keys = ON")
         self._conn.executescript(SCHEMA)
+        self._migrate()
+
+    def _migrate(self) -> None:
+        cols = {t: {r[1] for r in self._conn.execute(f"PRAGMA table_info({t})")}
+                for t in ("battles", "battle_structures")}
+        adds = [("battles", "screenshot", "TEXT"), ("battles", "reviewed", "INTEGER NOT NULL DEFAULT 0"),
+                ("battle_structures", "x", "REAL"), ("battle_structures", "y", "REAL"),
+                ("battle_structures", "source", "TEXT")]
+        with self._conn:
+            for table, col, decl in adds:
+                if col not in cols[table]:
+                    self._conn.execute(f"ALTER TABLE {table} ADD COLUMN {col} {decl}")
 
     def close(self) -> None:
         self._conn.close()
@@ -76,20 +88,47 @@ class Database:
             run_id = cur.lastrowid
             for b in run.battles:
                 bid = self._conn.execute(
-                    "INSERT INTO battles (run_id, round, won, kind, opponent_clan)"
-                    " VALUES (?,?,?,?,?)",
-                    (run_id, b.round, int(b.won), b.kind, b.opponent_clan),
+                    "INSERT INTO battles (run_id, round, won, kind, opponent_clan, screenshot, reviewed)"
+                    " VALUES (?,?,?,?,?,?,?)",
+                    (run_id, b.round, int(b.won), b.kind, b.opponent_clan, b.screenshot, int(b.reviewed)),
                 ).lastrowid
-                self._conn.executemany(
-                    "INSERT INTO battle_structures (battle_id, name, level) VALUES (?,?,?)",
-                    [(bid, s.name, s.level) for s in b.structures],
-                )
+                b.id = bid
+                self._insert_structures(bid, b.structures)
                 self._conn.executemany(
                     "INSERT INTO battle_cards (battle_id, name, god, kind) VALUES (?,?,?,?)",
                     [(bid, c.name, c.god, c.kind) for c in b.cards],
                 )
         run.id = run_id
         return run_id
+
+    def _insert_structures(self, battle_id: int, structures) -> None:
+        self._conn.executemany(
+            "INSERT INTO battle_structures (battle_id, name, level, x, y, source) VALUES (?,?,?,?,?,?)",
+            [(battle_id, s.name, s.level, s.x, s.y, s.source) for s in structures],
+        )
+
+    def set_battle_structures(self, battle_id: int, structures, reviewed: bool = True) -> bool:
+        """Replace a battle's structures, e.g. after the player reviews its screenshot."""
+        with self._lock, self._conn:
+            if not self._conn.execute("SELECT 1 FROM battles WHERE id = ?", (battle_id,)).fetchone():
+                return False
+            self._conn.execute("DELETE FROM battle_structures WHERE battle_id = ?", (battle_id,))
+            self._insert_structures(battle_id, structures)
+            self._conn.execute("UPDATE battles SET reviewed = ? WHERE id = ?", (int(reviewed), battle_id))
+        return True
+
+    def labelled_structures(self) -> list[tuple[str, str, int, float, float]]:
+        """(screenshot, name, level, x, y) for every structure a player placed or confirmed."""
+        with self._lock:
+            return [tuple(r) for r in self._conn.execute(
+                "SELECT b.screenshot, s.name, s.level, s.x, s.y FROM battle_structures s"
+                " JOIN battles b ON b.id = s.battle_id"
+                " WHERE b.reviewed = 1 AND b.screenshot IS NOT NULL AND s.x IS NOT NULL")]
+
+    def reviewed_shots(self) -> list[str]:
+        with self._lock:
+            return [r[0] for r in self._conn.execute(
+                "SELECT screenshot FROM battles WHERE reviewed = 1 AND screenshot IS NOT NULL")]
 
     def delete_run(self, run_id: int) -> bool:
         with self._lock, self._conn:
@@ -103,11 +142,13 @@ class Database:
             battles: dict[int, Battle] = {}
             for r in c.execute("SELECT * FROM battles ORDER BY run_id, round, id"):
                 b = Battle(round=r["round"], won=bool(r["won"]), kind=r["kind"],
-                           opponent_clan=r["opponent_clan"])
+                           opponent_clan=r["opponent_clan"], screenshot=r["screenshot"],
+                           reviewed=bool(r["reviewed"]), id=r["id"])
                 battles[r["id"]] = b
                 runs[r["run_id"]].battles.append(b)
             for r in c.execute("SELECT * FROM battle_structures"):
-                battles[r["battle_id"]].structures.append(Structure(r["name"], r["level"]))
+                battles[r["battle_id"]].structures.append(
+                    Structure(r["name"], r["level"], r["x"], r["y"], r["source"]))
             for r in c.execute("SELECT * FROM battle_cards"):
                 battles[r["battle_id"]].cards.append(Card(r["name"], r["god"], r["kind"]))
         return list(runs.values())
