@@ -2,7 +2,7 @@
 
 Event types (dicts with a "type" key):
   run_start          clan, warchief?, patch?, mode?, elo?, time?
-  run_info           mode?, elo?   (fills in a run already started)
+  run_info           clan?, mode?, elo?   (fills in a run already started)
   opponent           name
   board              structures: [{name, level}], cards?: [{name, god, kind}]
   structure_placed   name, level?
@@ -61,6 +61,8 @@ class Recorder:
         if self.run is None:
             return
         self.run.mode = e.get("mode") or self.run.mode
+        if e.get("clan") and self.run.clan in (None, "Unknown"):
+            self.run.clan = e["clan"]
         if self.run.elo_before is None:
             self.run.elo_before = e.get("elo")
 

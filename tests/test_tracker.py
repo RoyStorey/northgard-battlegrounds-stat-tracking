@@ -106,3 +106,67 @@ def test_northgard_log_parser(tmp_path):
     assert runs[1].cleared and not runs[0].cleared
     assert len(runs[1].battles) == 18
     assert [b.round for b in runs[1].battles if b.kind == "pve"] == [1, 5, 9, 13]
+
+
+FIXTURES = __import__("pathlib").Path(__file__).parent / "fixtures"
+
+
+def test_describe_asset_paths():
+    from nbg_tracker.gamedata import describe
+    d = "Assets/Core/Data/"
+    assert describe(d + "Items/ItemData/HealersHut.asset").name == "Healers Hut"
+    assert describe(d + "Items/ItemData/ClanStructures/StagStructures/BannerHallStag.asset").name == "Banner Hall"
+    assert describe(d + "Items/ItemData/Environment/Mountain.asset").kind == "other"
+    assert describe(d + "Players/Clans/Clans/WolfClan.asset").name == "Wolf"
+    card = describe(d + "Cards/Patrons/Odin/ExtraCards/Tier1/Odin_101.asset")
+    assert (card.kind, card.name, card.god, card.tier) == ("card", "Odin 101", "Odin", "Tier1")
+    assert describe(d + "Cards/Patrons/Thor/AffinityBlessings/Thor02.asset").name == "Thor favor 2"
+
+
+def test_board_from_player_data():
+    from nbg_tracker.capture.savefile import board_events
+    from nbg_tracker.gamedata import GameData
+
+    data = json.loads((FIXTURES / "player_data_stag_run.json").read_text())
+    info, board = board_events(data, GameData())
+    assert info == {"type": "run_info", "clan": "Stag"}
+    structures = {s["name"]: s["level"] for s in board["structures"]}
+    assert structures["Healers Hut"] == 3 and structures["Banner Hall"] == 1
+    assert "Mountain" not in structures
+    kinds = {c["name"]: c["kind"] for c in board["cards"]}
+    assert kinds["Loki 102"] == "rune" and kinds["Baldr favor 1"] == "favor" and kinds["Baldr 103"] == "card"
+    assert board_events({"CurrentRun": None}, GameData()) == []
+
+
+def test_log_and_board_make_a_full_run(tmp_path):
+    from nbg_tracker.capture.nbg_log import NorthgardLogParser
+    from nbg_tracker.capture.savefile import Enricher
+    from nbg_tracker.gamedata import GameData
+
+    db = Database(tmp_path / "t.db")
+    rec = Recorder(db)
+    emit = Enricher(GameData(), rec.handle)
+    parser = NorthgardLogParser()
+    player_data = (FIXTURES / "player_data_stag_run.json").read_text()
+    lines = ["Starting season: Spring", "Starting season: Spring", player_data,
+             "PlayerUnit: True OpponentUnit: False", player_data,
+             "PlayerUnit: True OpponentUnit: False",
+             '{"PlayerName": "me", "CurrentRun": null, "_currentEra": {"RankedElo": 120}}']
+    for line in lines:
+        for e in parser.parse(line):
+            emit(e)
+    [run] = db.load_runs()
+    assert run.clan == "Stag" and (run.wins, run.losses) == (1, 0) and run.elo_after == 120
+    assert "Healers Hut" in {s.name for s in run.battles[1].structures}
+
+
+def test_read_catalog_if_available():
+    import os
+    import pytest
+    from nbg_tracker.gamedata import describe, read_catalog
+
+    path = os.environ.get("NBG_CATALOG")
+    if not path:
+        pytest.skip("set NBG_CATALOG to the game's catalog.bin to run this")
+    m = read_catalog(path)
+    assert describe(m["e692742736efc0843acb2dd2084eaccf"]).name == "Stag"

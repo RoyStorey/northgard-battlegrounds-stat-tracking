@@ -9,8 +9,9 @@ The game logs enough to follow a run:
   {"PlayerName": ..., "CurrentRun": null, "_currentEra": {"RankedElo": ...}}   (back at the menu)
 
 The first battle of each season is against creatures (PvE) and does not
-count toward wins or shields. Structures, cards and clan are not in the log;
-they come from the save file (see savefile.py).
+count toward wins or shields. Structures, cards and clan come from the
+player data (see savefile.py): the save file, or log lines like the one above
+when CurrentRun is set.
 """
 from __future__ import annotations
 
@@ -72,7 +73,9 @@ class NorthgardLogParser:
             data = json.loads(line)
         except json.JSONDecodeError:
             return []
-        if data.get("CurrentRun") or not self.in_run:
+        if data.get("CurrentRun"):
+            return [{"type": "player_data", "data": data}]
+        if not self.in_run:
             return []
         self.in_run = False
         era = data.get("_currentEra") or {}

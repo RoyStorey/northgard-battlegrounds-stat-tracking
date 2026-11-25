@@ -9,10 +9,17 @@ gods and clans are winning for you.
 
 ## Status
 
-Storage, statistics, the dashboard and the game-log parser work. The log gives
-runs, battle results (PvE vs PvP), ranked/unranked and ELO. Structures, cards
-and clan are not in the log; reading them from the save file is next. Runs can
-also be added through the API or replayed from an event file.
+- **Player.log** gives each run, battle results (PvE vs PvP), ranked/unranked and ELO.
+- **Player data** gives the board: clan, structures with levels, runes, blessings,
+  god favor and cards bought. It is read from the save file, and from the log when
+  the game loads a run.
+- **Names** come from the game's `StreamingAssets/aa/catalog.bin`, found through the
+  install path in the log. A copy of the names ships with the app as a fallback.
+  Fate cards show by their internal code (e.g. "Odin 101") for now.
+- Still to confirm: where the save file lives on disk. Use `--save PATH` if it isn't
+  found automatically.
+
+Import an old log with `nbg-tracker replay "%USERPROFILE%\AppData\LocalLow\...\Player-prev.log"`.
 
 ## Install and run (Windows)
 
@@ -22,9 +29,9 @@ nbg-tracker run
 ```
 
 - `nbg-tracker run --no-tray` runs in a console window instead of the tray.
-- `nbg-tracker run --log PATH` points at the game log if it isn't found automatically.
+- `nbg-tracker run --log PATH --save PATH` points at the game log and save file if they aren't found automatically.
 - `nbg-tracker serve` opens the dashboard without watching the game.
-- `nbg-tracker replay events.jsonl` records runs from a file of JSON events.
+- `nbg-tracker replay FILE` imports runs from an old Player.log or a file of JSON events.
 
 ## How the stats work
 
