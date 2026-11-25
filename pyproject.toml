@@ -7,7 +7,7 @@ name = "nbg-tracker"
 version = "0.1.0"
 description = "Records your Northgard Battlegrounds runs and shows which structures, cards and strategies win for you."
 requires-python = ">=3.10"
-dependencies = ["fastapi>=0.110", "uvicorn>=0.29", "numpy>=1.26", "pillow>=10", "mss>=9; sys_platform == 'win32'"]
+dependencies = ["fastapi>=0.110", "uvicorn>=0.29", "numpy>=1.26", "pillow>=10", "opencv-python-headless>=4.8", "mss>=9; sys_platform == 'win32'"]
 
 [project.optional-dependencies]
 tray = ["pystray>=0.19"]

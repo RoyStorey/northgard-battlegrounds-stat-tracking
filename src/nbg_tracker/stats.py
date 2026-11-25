@@ -97,7 +97,7 @@ def feature_impacts(battles: list[Battle], features: Callable[[Battle], Iterable
 
 
 def _structures(b: Battle) -> list[str]:
-    return [s.name for s in b.structures]
+    return [s.name for s in b.structures if s.name and s.name != "?"]
 
 
 def _cards(b: Battle) -> list[str]:
@@ -188,7 +188,7 @@ def report(runs: list[Run], patch: str | None = None, clan: str | None = None,
         "trend": trend(selected),
         "recent_runs": [
             {k: v for k, v in r.to_dict().items() if k != "battles"}
-            | {"final_structures": sorted({s.name for s in (r.battles[-1].structures if r.battles else [])}),
+            | {"final_structures": sorted({s.name for s in (r.battles[-1].structures if r.battles else []) if s.name != "?"}),
                "to_review": sum(1 for b in r.battles if b.screenshot and not b.reviewed)}
             for r in sorted(selected, key=lambda r: (r.started_at or "", r.id or 0), reverse=True)[:25]
         ],

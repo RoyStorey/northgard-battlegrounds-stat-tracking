@@ -2,8 +2,9 @@
 
 Only the game's own window is captured, and only while it is the window in
 front, so nothing else on your screen is ever recorded. Frames are taken
-every couple of seconds during the build phase; when the log says a battle
-is starting, the last frame is kept as that battle's board.
+every couple of seconds during the build phase, and the one showing the most
+structures is kept as that battle's board when the log says a battle starts
+(the camera moves, so the last frame may be zoomed in on one corner).
 """
 from __future__ import annotations
 
@@ -17,7 +18,7 @@ from typing import Callable
 
 from PIL import Image
 
-from ..vision import Recognizer
+from ..vision import Recognizer, frame_quality
 
 log = logging.getLogger(__name__)
 
@@ -90,6 +91,7 @@ class ScreenCapturer:
         self.interval = interval
         self.building = False
         self.latest: Image.Image | None = None
+        self.latest_quality = -1
         self.round = 0
         self._lock = threading.Lock()
         self._stop = threading.Event()
@@ -116,8 +118,14 @@ class ScreenCapturer:
                     log.exception("screen grab failed")
                     img = None
                 if img is not None:
+                    try:
+                        q = frame_quality(img)
+                    except Exception:
+                        log.exception("frame check failed")
+                        q = 0
                     with self._lock:
-                        self.latest = img
+                        if q >= self.latest_quality:  # ties go to the newer frame
+                            self.latest, self.latest_quality = img, q
             self._stop.wait(self.interval)
 
     def __call__(self, event: dict) -> None:
@@ -136,19 +144,19 @@ class ScreenCapturer:
 
     def _begin_build(self) -> None:
         with self._lock:
-            self.latest = None
+            self.latest, self.latest_quality = None, -1
         self.building = True
 
     def _battle_starting(self) -> None:
         self.building = False
         with self._lock:
-            img, self.latest = self.latest, None
+            img, self.latest, self.latest_quality = self.latest, None, -1
         if img is None:
             return
         name = f"{datetime.now():%Y%m%d-%H%M%S}-r{self.round + 1:02d}.jpg"
         img.save(self.shots_dir / name, quality=85)
         self.emit({"type": "screenshot", "file": name})
-        if self.recognizer is not None and self.recognizer.ready:
+        if self.recognizer is not None:
             found = self.recognizer.recognize(img)
             self.emit({"type": "board", "structures": [
                 {"name": s.name, "level": s.level, "x": s.x, "y": s.y, "source": s.source} for s in found]})

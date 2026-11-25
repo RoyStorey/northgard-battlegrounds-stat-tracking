@@ -74,7 +74,7 @@ def create_app(db: Database, status: dict | None = None, shots_dir: str | Path |
             structures = [Structure(str(s["name"]), int(s.get("level", 1)),
                                     float(s["x"]) if s.get("x") is not None else None,
                                     float(s["y"]) if s.get("y") is not None else None, "user")
-                          for s in body if str(s.get("name", "")).strip()]
+                          for s in body if str(s.get("name", "")).strip() not in ("", "?")]
         except (KeyError, TypeError, ValueError) as e:
             raise HTTPException(422, f"invalid structures: {e}") from e
         if not db.set_battle_structures(battle_id, structures):

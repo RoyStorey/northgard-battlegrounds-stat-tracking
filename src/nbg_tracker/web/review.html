@@ -69,8 +69,8 @@ kbd { border: 1px solid var(--border); border-radius: 4px; padding: 0 4px; font-
 <main>
   <a href="/">← Dashboard</a>
   <h1 id="title">Review board</h1>
-  <p class="sub">Click a building to name it, or click a label to change it. Dashed labels are the tracker's
-    guesses. Saving teaches it what your buildings look like.</p>
+  <p class="sub">Dots mark the structures the tracker found. Dashed labels are its guesses and "?" means it
+    doesn't know that one yet: click to name or fix it, or click a building it missed. Saving teaches it.</p>
   <div class="rounds" id="rounds" role="tablist" aria-label="Rounds"></div>
   <div class="layout">
     <section class="card"><div class="board" id="board"></div></section>
@@ -88,7 +88,6 @@ kbd { border: 1px solid var(--border); border-radius: 4px; padding: 0 4px; font-
       </div>
       <ul class="list" id="list"></ul>
       <div class="row" style="margin-top:12px">
-        <button id="copy-prev">Copy previous round</button>
         <button id="toggle-labels" aria-pressed="false">Hide labels</button>
         <button id="save" class="primary">Save &amp; next</button>
       </div>
@@ -159,7 +158,7 @@ function render() {
 function select(i) {
   sel = i; const m = marks[i];
   $("#editor").hidden = false;
-  $("#ed-name").value = m.name || ""; $("#ed-level").value = String(m.level || 1);
+  $("#ed-name").value = m.name === "?" ? "" : (m.name || ""); $("#ed-level").value = String(m.level || 1);
   render(); $("#ed-name").focus(); $("#ed-name").select();
 }
 function deselect() {
@@ -182,26 +181,16 @@ $("#ed-done").addEventListener("click", deselect);
 $("#ed-name").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); e.stopPropagation(); deselect(); } });
 $("#list").addEventListener("click", (e) => { const a = e.target.closest("a"); if (a) { e.preventDefault(); select(+a.dataset.i); } });
 $("#rounds").addEventListener("click", (e) => { const b = e.target.closest("button"); if (b) show(+b.dataset.i); });
-$("#copy-prev").addEventListener("click", () => {
-  const prev = battles[idx - 1]; if (!prev) return;
-  marks = prev.structures.filter((s) => s.x != null).map((s) => ({...s, source: "auto"}));
-  sel = -1; $("#editor").hidden = true; change(); render();
-});
 
 async function save() {
   if (sel >= 0) deselect();
   const b = battles[idx];
-  const body = marks.filter((m) => m.name.trim()).map(({name, level, x, y}) => ({name: name.trim(), level, x, y}));
+  const body = marks.filter((m) => m.name.trim() && m.name.trim() !== "?").map(({name, level, x, y}) => ({name: name.trim(), level, x, y}));
   const r = await fetch(`/api/battles/${b.id}/structures`, {method: "PUT", headers: {"Content-Type": "application/json"}, body: JSON.stringify(body)});
   if (!r.ok) { alert("Could not save: " + (await r.text())); return; }
   b.structures = body.map((m) => ({...m, source: "user"})); b.reviewed = true; dirty = false;
-  if (idx + 1 < battles.length) {
-    const next = battles[idx + 1];
-    if (!next.reviewed && !next.structures.some((s) => s.x != null)) {   // carry the board forward as a starting point
-      next.structures = b.structures.map((m) => ({...m, source: "auto"}));
-    }
-    show(idx + 1);
-  } else { renderRounds(); render(); }
+  if (idx + 1 < battles.length) show(idx + 1);
+  else { renderRounds(); render(); }
 }
 $("#save").addEventListener("click", save);
 $("#toggle-labels").addEventListener("click", (e) => {

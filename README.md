@@ -13,9 +13,14 @@ gods and clans are winning for you.
 - **Screenshots** of the game window are taken during each build phase (only while
   the game is the window in front). The last one before each battle is kept in
   `%LOCALAPPDATA%\nbg-tracker\shots`.
+- **Finding structures**: every tile has a hex badge that stays the same size at any
+  zoom, and tiles with a structure have a number box beside it. The tracker finds
+  badges by template matching, so it works wherever the camera is. Of the frames
+  taken during a build phase, it keeps the one showing the most structures.
 - **Review page**: after a run, open it from the dashboard's run list. Each round's
-  screenshot shows the structures the tracker thinks are there; click to fix or add.
-  Your corrections train the recogniser, so it fills boards in by itself after a few runs.
+  screenshot shows the structures found, named where the tracker recognises them
+  ("?" where it doesn't yet). Your names train the recogniser, so it fills boards in
+  by itself after a run or two. Levels are set there too (not read from the screen yet).
 - **Names** come from the game's `StreamingAssets/aa/catalog.bin`, found through the
   install path in the log, with a bundled copy as fallback. The save file is
   encrypted, so it is not read.

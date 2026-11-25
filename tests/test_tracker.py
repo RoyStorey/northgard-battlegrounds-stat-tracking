@@ -172,69 +172,92 @@ def test_read_catalog_if_available():
     assert describe(m["e692742736efc0843acb2dd2084eaccf"]).name == "Stag"
 
 
-def _board_image(pieces, size=(800, 450), seed=0):
-    """A fake board: textured ground with distinct 'buildings' drawn at given spots."""
+def _board_image(pieces, size=(1920, 1080), offset=(0, 0), seed=0, empty=()):
+    """A fake board in the game's style: hex badges (with a number box under each
+    structure) on textured ground, and a distinct 'building' above-right of each badge."""
+    import cv2
     import numpy as np
-    from PIL import Image, ImageDraw
+    from nbg_tracker.vision import _hexagon
     rng = np.random.default_rng(seed)
-    ground = (rng.normal(0, 6, (size[1], size[0], 3)) + [90, 120, 70]).clip(0, 255).astype("uint8")
-    img = Image.fromarray(ground)
-    d = ImageDraw.Draw(img)
-    styles = {"Healers Hut": ("ellipse", (230, 230, 240)), "Wolf Den": ("rect", (60, 40, 30)),
-              "Mine": ("tri", (150, 150, 160))}
+    img = (rng.normal(0, 8, (size[1], size[0], 3)) + [70, 130, 110]).clip(0, 255).astype("uint8")
+    looks = {"Healers Hut": ((230, 230, 240), "circle"), "Wolf Den": ((40, 60, 120), "rect"),
+             "Mine": ((160, 150, 150), "tri"), "Farm": ((40, 200, 230), "rect")}
+
+    def badge(x, y, box):
+        for r, colour in ((21.5, (30, 25, 20)), (19.5, (230, 200, 150)), (17.0, (60, 50, 40)), (15.5, (45, 37, 27))):
+            cv2.fillPoly(img, [(_hexagon(0, r) + (x, y)).astype(np.int32)], colour, lineType=cv2.LINE_AA)
+        if box:
+            cv2.rectangle(img, (x + 22, y - 10), (x + 70, y + 10), (0xA1, 0x9B, 0x7E), -1)
+
     for name, x, y in pieces:
-        shape, colour = styles[name]
-        cx, cy, r = x * size[0], y * size[1], 14
-        if shape == "ellipse":
-            d.ellipse((cx - r, cy - r, cx + r, cy + r), fill=colour)
+        x, y = int(x + offset[0]), int(y + offset[1])
+        badge(x, y, True)
+        colour, shape = looks[name]
+        cx, cy = x + 33, y - 92
+        if shape == "circle":
+            cv2.circle(img, (cx, cy), 45, colour, -1)
         elif shape == "rect":
-            d.rectangle((cx - r, cy - r / 2, cx + r, cy + r), fill=colour)
+            cv2.rectangle(img, (cx - 50, cy - 30), (cx + 50, cy + 40), colour, -1)
         else:
-            d.polygon([(cx, cy - r), (cx + r, cy + r), (cx - r, cy + r)], fill=colour)
+            cv2.fillPoly(img, [np.array([(cx, cy - 50), (cx + 50, cy + 40), (cx - 50, cy + 40)], np.int32)], colour)
+    for x, y in empty:
+        badge(int(x + offset[0]), int(y + offset[1]), False)
     return img
 
 
-SLOTS = [(0.3, 0.4), (0.5, 0.4), (0.7, 0.4), (0.4, 0.7), (0.6, 0.7)]
+GRID = [(600, 400), (820, 400), (1040, 400), (710, 600), (930, 600)]
+
+
+def test_badges_found_and_classified():
+    from nbg_tracker.vision import find_badges
+    img = _board_image([("Mine", *GRID[0]), ("Farm", *GRID[1])], empty=[GRID[3]])
+    badges = sorted(find_badges(img), key=lambda b: (b.y, b.x))
+    assert [(round(b.x), round(b.y), b.structure) for b in badges] == [
+        (600, 400, True), (820, 400, True), (710, 600, False)]
 
 
 def test_recognizer_learns_from_reviewed_boards(tmp_path):
-    from nbg_tracker.vision import Recognizer
+    import cv2
+    from nbg_tracker.vision import Recognizer, find_badges
 
     rec = Recognizer(tmp_path)
-    assert rec.recognize(_board_image([])) == []  # nothing learned yet
-    boards = [
-        [("Healers Hut", *SLOTS[0]), ("Wolf Den", *SLOTS[1])],
-        [("Wolf Den", *SLOTS[0]), ("Mine", *SLOTS[2]), ("Healers Hut", *SLOTS[3])],
-        [("Mine", *SLOTS[1]), ("Healers Hut", *SLOTS[4]), ("Wolf Den", *SLOTS[2])],
-        [("Mine", *SLOTS[3]), ("Wolf Den", *SLOTS[4]), ("Healers Hut", *SLOTS[1])],
-    ]
+    first = _board_image([("Healers Hut", *GRID[0]), ("Wolf Den", *GRID[1]), ("Mine", *GRID[2]), ("Farm", *GRID[3])])
+    cv2.imwrite(str(tmp_path / "a.jpg"), first)
+    assert {s.name for s in rec.recognize(first)} == {"?"}  # found, but not named yet
+
+    h, w = first.shape[:2]
+    names = {GRID[0]: "Healers Hut", GRID[1]: "Wolf Den", GRID[2]: "Mine", GRID[3]: "Farm"}
     marks = []
-    for i, board in enumerate(boards):
-        _board_image(board, seed=i).save(tmp_path / f"b{i}.jpg", quality=90)
-        marks += [(f"b{i}.jpg", name, 1, x, y) for name, x, y in board]
-    rec.train(marks, [f"b{i}.jpg" for i in range(len(boards))])
+    for b in find_badges(first):
+        cx, cy = b.centre()
+        marks.append(("a.jpg", names[(round(b.x), round(b.y))], 1, (cx + 8) / w, (cy - 5) / h))
+    rec.train(marks)
 
-    new = [("Mine", *SLOTS[0]), ("Healers Hut", *SLOTS[2]), ("Wolf Den", *SLOTS[3])]
-    found = {(s.name, s.x, s.y) for s in rec.recognize(_board_image(new, seed=99))}
-    expected = {(n, x, y) for n, x, y in new}
-    assert {(n, round(x, 2), round(y, 2)) for n, x, y in found} == expected
+    # the camera moved: everything shifted, and the buildings sit in different tiles
+    moved = _board_image([("Farm", *GRID[0]), ("Mine", *GRID[1]), ("Healers Hut", *GRID[4])], offset=(-230, 140), seed=5)
+    found = sorted((round(s.x * w), s.name) for s in rec.recognize(moved))
+    assert [n for _, n in found] == ["Farm", "Mine", "Healers Hut"]
 
 
-def test_screen_capturer_keeps_last_build_frame(tmp_path):
+def test_screen_capturer_keeps_best_build_frame(tmp_path):
     import time
+    from PIL import Image
     from nbg_tracker.capture.screen import ScreenCapturer
+    from nbg_tracker.vision import Recognizer
 
+    full = Image.fromarray(_board_image([("Mine", *GRID[0]), ("Farm", *GRID[1]), ("Wolf Den", *GRID[2])])[:, :, ::-1])
+    zoomed = Image.fromarray(_board_image([("Mine", *GRID[0])])[:, :, ::-1])
+    frames = iter([full, full] + [zoomed] * 1000)  # the camera zooms in late in the build phase
     out = []
-    frame = _board_image([("Mine", 0.5, 0.5)])
-    cap = ScreenCapturer(out.append, tmp_path, grab=lambda: frame, interval=0.01)
+    cap = ScreenCapturer(out.append, tmp_path, Recognizer(tmp_path), grab=lambda: next(frames), interval=0.005)
     cap.start()
     cap({"type": "run_start", "clan": "Unknown"})
-    time.sleep(0.1)
+    time.sleep(0.3)
     cap({"type": "opponent", "name": "x"})
     cap.stop()
-    kinds = [e["type"] for e in out]
-    assert kinds == ["run_start", "screenshot", "opponent"]
+    assert [e["type"] for e in out] == ["run_start", "screenshot", "board", "opponent"]
     assert (tmp_path / out[1]["file"]).is_file()
+    assert len(out[2]["structures"]) == 3  # the full view, not the last zoomed frame
 
 
 def test_review_api_saves_labels(tmp_path):
