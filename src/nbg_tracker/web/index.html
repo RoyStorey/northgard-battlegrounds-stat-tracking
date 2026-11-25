@@ -1,0 +1,284 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Battlegrounds Tracker</title>
+<style>
+:root {
+  --page: #f9f9f9; --surface: #ffffff; --ink: #191919; --ink-2: #666666;
+  --grid: #e7e7e7; --axis: #c2c2c2; --border: rgba(11,11,11,0.10);
+  --pos: #257de0; --neg: #ec4647; --series: #257de0; --mid: #efefef;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --page: #0b0b0b; --surface: #191919; --ink: #efefef; --ink-2: #9c9c9c;
+    --grid: #303030; --axis: #474747; --border: rgba(255,255,255,0.10);
+    --pos: #338ced; --neg: #eb6263; --series: #338ced; --mid: #383838;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --page: #0b0b0b; --surface: #191919; --ink: #efefef; --ink-2: #9c9c9c;
+  --grid: #303030; --axis: #474747; --border: rgba(255,255,255,0.10);
+  --pos: #338ced; --neg: #eb6263; --series: #338ced; --mid: #383838;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--page); color: var(--ink);
+  font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+main { max-width: 1080px; margin: 0 auto; padding: 24px 16px 48px; }
+header { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px 16px; margin-bottom: 16px; }
+h1 { font-size: 20px; margin: 0; }
+h2 { font-size: 15px; margin: 0 0 4px; }
+.sub { color: var(--ink-2); font-size: 13px; margin: 0 0 12px; }
+.status { color: var(--ink-2); font-size: 13px; }
+.filters { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
+select, button { font: inherit; color: var(--ink); background: var(--surface);
+  border: 1px solid var(--border); border-radius: 6px; padding: 5px 10px; }
+button[aria-pressed="true"] { border-color: var(--ink); font-weight: 600; }
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 16px; }
+.tile, .card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; }
+.tile .label { color: var(--ink-2); font-size: 12px; }
+.tile .value { font-size: 26px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 12px; margin-bottom: 12px; }
+.card { margin-bottom: 12px; min-width: 0; }
+.tabs { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0 12px; }
+/* diverging impact bars */
+.impact { display: grid; grid-template-columns: minmax(80px, 200px) 1fr 96px; gap: 2px 10px; align-items: center; }
+.impact .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
+.impact .val { text-align: right; font-variant-numeric: tabular-nums; font-size: 13px; }
+.impact .val small { display: block; white-space: nowrap; color: var(--ink-2); font-size: 11px; line-height: 1.1; }
+.track { position: relative; height: 22px; cursor: default; }
+.track::before { content: ""; position: absolute; left: 50%; top: 0; bottom: 0; width: 1px; background: var(--axis); }
+.bar { position: absolute; top: 5px; height: 12px; }
+.bar.pos { left: 50%; background: var(--pos); border-radius: 0 4px 4px 0; }
+.bar.neg { right: 50%; background: var(--neg); border-radius: 4px 0 0 4px; }
+.bar.low { opacity: .45; }
+@media (max-width: 560px) {
+  .impact { grid-template-columns: 1fr 84px; }
+  .impact .name { grid-column: 1 / -1; margin-top: 6px; }
+  .impact > div:empty { display: none; }
+}
+td.num { white-space: nowrap; }
+.axis-row { display: flex; justify-content: space-between; color: var(--ink-2); font-size: 11px; }
+/* column bars */
+.cols { display: flex; align-items: flex-end; gap: 2px; height: 140px; border-bottom: 1px solid var(--axis);
+  background: linear-gradient(to top, var(--grid) 1px, transparent 1px) 0 0 / 100% 25%; }
+.col { flex: 1; background: var(--series); border-radius: 4px 4px 0 0; min-width: 4px; }
+.col-labels { display: flex; gap: 2px; color: var(--ink-2); font-size: 11px; }
+.col-labels span { flex: 1; text-align: center; }
+svg text { fill: var(--ink-2); font-size: 11px; }
+table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; font-size: 13px; }
+th { text-align: left; color: var(--ink-2); font-weight: 500; border-bottom: 1px solid var(--axis); padding: 6px 8px 6px 0; }
+td { border-bottom: 1px solid var(--grid); padding: 6px 8px 6px 0; vertical-align: top; }
+td.num, th.num { text-align: right; }
+.scroll { overflow-x: auto; }
+.empty { color: var(--ink-2); padding: 24px 0; text-align: center; }
+#tip { position: fixed; pointer-events: none; background: var(--surface); color: var(--ink);
+  border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; font-size: 12px;
+  box-shadow: 0 4px 16px rgba(0,0,0,.15); display: none; max-width: 260px; z-index: 10; }
+#tip b { display: block; margin-bottom: 2px; }
+details { color: var(--ink-2); font-size: 13px; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Battlegrounds Tracker</h1>
+    <span class="status" id="status"></span>
+  </header>
+
+  <div class="filters" role="group" aria-label="Filters">
+    <select id="f-patch" aria-label="Patch"><option value="">All patches</option></select>
+    <select id="f-clan" aria-label="Clan"><option value="">All clans</option></select>
+    <select id="f-mode" aria-label="Mode"><option value="">All modes</option></select>
+  </div>
+
+  <section class="tiles" id="tiles"></section>
+
+  <section class="card">
+    <h2>What's working</h2>
+    <p class="sub">Extra wins per 100 battles while the piece is on your board, compared with your usual
+      win rate in the same season. Faded bars have little evidence behind them yet.</p>
+    <div class="tabs" role="tablist" id="tabs">
+      <button data-k="structures" aria-pressed="true">Structures</button>
+      <button data-k="cards">Fate cards</button>
+      <button data-k="gods">Gods</button>
+      <button data-k="synergies">Structure pairs</button>
+    </div>
+    <div id="impact"></div>
+  </section>
+
+  <div class="grid2">
+    <section class="card">
+      <h2>Clans</h2>
+      <p class="sub">Average PvP wins per run, and how often you reach 10.</p>
+      <div class="scroll" id="clans"></div>
+    </section>
+    <section class="card">
+      <h2>Win rate by round</h2>
+      <p class="sub">Where your runs tend to stall.</p>
+      <div id="rounds"></div>
+    </section>
+  </div>
+
+  <section class="card">
+    <h2>Wins per run</h2>
+    <p class="sub">Each run, with the average of your last 10.</p>
+    <div id="trend"></div>
+  </section>
+
+  <section class="card">
+    <h2>Recent runs</h2>
+    <div class="scroll" id="runs"></div>
+  </section>
+
+  <details>
+    <summary>How the numbers work</summary>
+    <p>Late rounds are harder and rare structures appear late, so raw win rates would make late-game pieces look
+      bad. Each battle gets an expected win chance from your own record in that season. A piece's score is wins
+      above that expectation, pulled toward zero when it has only a few battles. Pieces you build together share
+      credit, so check the pairs tab before reading too much into one structure.</p>
+  </details>
+</main>
+<div id="tip" role="tooltip"></div>
+<script>
+const $ = (s) => document.querySelector(s);
+const pct = (x) => x == null ? "–" : Math.round(x * 100) + "%";
+const num = (x, d = 1) => x == null ? "–" : x.toFixed(d);
+const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;"}[c]));
+let data = null, tab = "structures";
+
+const tip = $("#tip");
+function showTip(e, html) {
+  tip.innerHTML = html; tip.style.display = "block";
+  const r = tip.getBoundingClientRect();
+  let x = e.clientX + 14, y = e.clientY + 14;
+  if (x + r.width > innerWidth - 8) x = e.clientX - r.width - 14;
+  if (y + r.height > innerHeight - 8) y = e.clientY - r.height - 14;
+  tip.style.left = x + "px"; tip.style.top = y + "px";
+}
+function bindTips(root) {
+  root.querySelectorAll("[data-tip]").forEach((el) => {
+    el.addEventListener("mousemove", (e) => showTip(e, el.dataset.tip));
+    el.addEventListener("mouseleave", () => (tip.style.display = "none"));
+  });
+}
+
+function fillSelect(sel, values) {
+  const cur = sel.value;
+  sel.length = 1;
+  values.forEach((v) => sel.add(new Option(v, v)));
+  sel.value = values.includes(cur) ? cur : "";
+}
+
+async function load() {
+  const q = new URLSearchParams({patch: $("#f-patch").value, clan: $("#f-clan").value, mode: $("#f-mode").value});
+  data = await (await fetch("/api/report?" + q)).json();
+  fillSelect($("#f-patch"), data.filters.patches);
+  fillSelect($("#f-clan"), data.filters.clans);
+  fillSelect($("#f-mode"), data.filters.modes);
+  const st = data.status || {};
+  $("#status").textContent = st.paused ? "Recording paused"
+    : st.watching ? "Watching " + st.watching.split(/[\\/]/).pop()
+    : st.watching === null ? "Game log not found – runs are not being recorded" : "";
+  render();
+}
+
+function render() {
+  const s = data.summary;
+  $("#tiles").innerHTML = [
+    ["Runs", s.runs], ["Avg wins / run", num(s.avg_wins)], ["Reached 10 wins", pct(s.clear_rate)],
+    ["Battle win rate", pct(s.battle_win_rate)],
+    ["Avg ELO change", s.avg_elo_delta == null ? "–" : (s.avg_elo_delta > 0 ? "+" : "") + num(s.avg_elo_delta, 0)],
+  ].map(([l, v]) => `<div class="tile"><div class="label">${l}</div><div class="value">${v}</div></div>`).join("");
+  renderImpact(); renderClans(); renderRounds(); renderTrend(); renderRuns();
+}
+
+function renderImpact() {
+  const rows = data[tab];
+  const el = $("#impact");
+  if (!rows.length) { el.innerHTML = `<div class="empty">Not enough battles yet. Pieces show up after ${tab === "synergies" ? 6 : 3} battles.</div>`; return; }
+  const shown = rows.length > 24 ? [...rows.slice(0, 12), ...rows.slice(-12)] : rows;
+  const max = Math.max(5, ...shown.map((r) => Math.abs(r.impact)));
+  el.innerHTML = `<div class="impact">` + shown.map((r) => {
+    const w = (Math.abs(r.impact) / max) * 50;
+    const cls = (r.impact >= 0 ? "pos" : "neg") + (r.confidence === "low" ? " low" : "");
+    const t = `<b>${esc(r.name)}</b>${r.wins}–${r.battles - r.wins} in ${r.battles} battles (${pct(r.win_rate)})<br>` +
+      `Expected at those stages: ${pct(r.expected_win_rate)}<br>Evidence: ${r.confidence}`;
+    return `<div class="name" title="${esc(r.name)}">${esc(r.name)}</div>
+      <div class="track" data-tip="${esc(t)}"><div class="bar ${cls}" style="width:${w}%"></div></div>
+      <div class="val">${r.impact > 0 ? "+" : ""}${num(r.impact)}<small>${r.battles} b · ${r.confidence}</small></div>`;
+  }).join("") + `</div><div class="impact"><div></div><div class="axis-row"><span>−${num(max, 0)}</span><span>0</span><span>+${num(max, 0)}</span></div><div></div></div>`;
+  bindTips(el);
+}
+
+function renderClans() {
+  const rows = data.clans;
+  $("#clans").innerHTML = rows.length ? `<table><thead><tr><th>Clan</th><th class="num">Runs</th><th class="num">Avg wins</th>
+    <th class="num">Reached 10</th><th class="num">ELO / run</th></tr></thead><tbody>` + rows.map((r) =>
+    `<tr><td>${esc(r.name)}</td><td class="num">${r.runs}</td><td class="num">${num(r.avg_wins)}</td>
+     <td class="num">${pct(r.clear_rate)} <small style="color:var(--ink-2)">(${pct(r.clear_rate_ci[0])}–${pct(r.clear_rate_ci[1])})</small></td>
+     <td class="num">${r.avg_elo_delta == null ? "–" : num(r.avg_elo_delta, 0)}</td></tr>`).join("") + "</tbody></table>"
+    : `<div class="empty">No runs yet.</div>`;
+}
+
+function renderRounds() {
+  const rows = data.rounds, el = $("#rounds");
+  if (!rows.length) { el.innerHTML = `<div class="empty">No battles yet.</div>`; return; }
+  el.innerHTML = `<div class="cols">` + rows.map((r) =>
+    `<div class="col" style="height:${Math.max(2, r.win_rate * 100)}%" data-tip="${esc(`<b>Round ${r.round}</b>${pct(r.win_rate)} won of ${r.battles} battles`)}"></div>`
+  ).join("") + `</div><div class="col-labels">` + rows.map((r) => `<span>${r.round}</span>`).join("") + `</div>`;
+  bindTips(el);
+}
+
+function renderTrend() {
+  const pts = data.trend, el = $("#trend");
+  if (pts.length < 2) { el.innerHTML = `<div class="empty">Shows up after two runs.</div>`; return; }
+  const W = 1000, H = 180, L = 28, B = 20, T = 8;
+  const x = (i) => L + (i / (pts.length - 1)) * (W - L - 8);
+  const y = (v) => T + (1 - v / 10) * (H - T - B);
+  const line = pts.map((p, i) => `${i ? "L" : "M"}${x(i).toFixed(1)},${y(p.rolling_avg_wins).toFixed(1)}`).join("");
+  const grid = [0, 5, 10].map((v) => `<line x1="${L}" x2="${W - 8}" y1="${y(v)}" y2="${y(v)}" stroke="var(--grid)"/>
+    <text x="${L - 6}" y="${y(v) + 4}" text-anchor="end">${v}</text>`).join("");
+  const dots = pts.map((p, i) => `<circle cx="${x(i)}" cy="${y(p.wins)}" r="4" fill="var(--ink-2)" opacity=".45"/>`).join("");
+  el.innerHTML = `<svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="Wins per run with 10-run average">
+    ${grid}${dots}<path d="${line}" fill="none" stroke="var(--series)" stroke-width="2"/>
+    <line id="xh" y1="${T}" y2="${H - B}" stroke="var(--axis)" visibility="hidden"/>
+    <rect x="${L}" y="0" width="${W - L}" height="${H}" fill="transparent" id="hit"/></svg>`;
+  const svg = el.querySelector("svg"), xh = el.querySelector("#xh");
+  el.querySelector("#hit").addEventListener("mousemove", (e) => {
+    const r = svg.getBoundingClientRect();
+    const vx = ((e.clientX - r.left) / r.width) * W;
+    const i = Math.max(0, Math.min(pts.length - 1, Math.round(((vx - L) / (W - L - 8)) * (pts.length - 1))));
+    xh.setAttribute("x1", x(i)); xh.setAttribute("x2", x(i)); xh.setAttribute("visibility", "visible");
+    const p = pts[i];
+    showTip(e, `<b>Run ${i + 1}</b>${p.wins} wins<br>10-run average: ${num(p.rolling_avg_wins)}`);
+  });
+  el.querySelector("#hit").addEventListener("mouseleave", () => { tip.style.display = "none"; xh.setAttribute("visibility", "hidden"); });
+}
+
+function renderRuns() {
+  const rows = data.recent_runs;
+  $("#runs").innerHTML = rows.length ? `<table><thead><tr><th>Date</th><th>Clan</th><th class="num">W–L</th>
+    <th>Patch</th><th>Final board</th></tr></thead><tbody>` + rows.map((r) =>
+    `<tr><td>${esc((r.started_at || "").slice(0, 10))}</td><td>${esc(r.clan)}${r.warchief ? " · " + esc(r.warchief) : ""}</td>
+     <td class="num">${r.wins}–${r.losses}</td><td>${esc(r.patch || "")}</td>
+     <td>${esc(r.final_structures.join(", "))}</td></tr>`).join("") + "</tbody></table>"
+    : `<div class="empty">No runs recorded yet. Play a run with the tracker open and it will appear here.</div>`;
+}
+
+$("#tabs").addEventListener("click", (e) => {
+  const b = e.target.closest("button"); if (!b) return;
+  tab = b.dataset.k;
+  document.querySelectorAll("#tabs button").forEach((x) => x.setAttribute("aria-pressed", x === b));
+  renderImpact();
+});
+["#f-patch", "#f-clan", "#f-mode"].forEach((s) => $(s).addEventListener("change", load));
+load();
+setInterval(load, 15000);
+</script>
+</body>
+</html>
