@@ -31,6 +31,8 @@ class Tracker:
         self.shots = db.path.parent / "shots"
         self.shots.mkdir(parents=True, exist_ok=True)
         self.recognizer = Recognizer(self.shots)
+        if filled := db.fill_unknown_clans(self.gd.structure_clans()):
+            log.info("worked out the clan of %d earlier runs", filled)
         self.recorder: Recorder | None = None
         self.capturer: ScreenCapturer | None = None
         self.retrain()
@@ -46,7 +48,8 @@ class Tracker:
                          name="train", daemon=True).start()
 
     def serve(self, port: int, background: bool) -> None:
-        app = create_app(self.db, self.status, self.shots, self.gd.structure_names(), self.retrain, self.live)
+        app = create_app(self.db, self.status, self.shots, self.gd.structure_names(), self.retrain, self.live,
+                         self.gd.structure_clans())
         server = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning"))
         if background:
             threading.Thread(target=server.run, name="dashboard", daemon=True).start()
@@ -54,7 +57,8 @@ class Tracker:
             server.run()
 
     def watch(self, log_path: Path | None, screenshots: bool) -> tuple[Recorder, list]:
-        recorder = Recorder(self.db, on_saved=lambda r: self.status.update(last_saved_run=r.id))
+        recorder = Recorder(self.db, on_saved=lambda r: self.status.update(last_saved_run=r.id),
+                            structure_clans=self.gd.structure_clans())
         self.recorder = recorder
         sink = recorder.handle
         watchers: list = []

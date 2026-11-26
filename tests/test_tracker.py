@@ -115,7 +115,7 @@ def test_describe_asset_paths():
     from nbg_tracker.gamedata import describe
     d = "Assets/Core/Data/"
     assert describe(d + "Items/ItemData/HealersHut.asset").name == "Healers Hut"
-    assert describe(d + "Items/ItemData/ClanStructures/StagStructures/BannerHallStag.asset").name == "Banner Hall"
+    assert describe(d + "Items/ItemData/ClanStructures/StagStructures/BannerHallStag.asset").name == "Stag Banner Hall"
     assert describe(d + "Items/ItemData/Environment/Mountain.asset").kind == "other"
     assert describe(d + "Players/Clans/Clans/WolfClan.asset").name == "Wolf"
     card = describe(d + "Cards/Patrons/Odin/ExtraCards/Tier1/Odin_101.asset")
@@ -131,7 +131,7 @@ def test_board_from_player_data():
     info, board = board_events(data, GameData())
     assert info == {"type": "run_info", "clan": "Stag"}
     structures = {s["name"]: s["level"] for s in board["structures"]}
-    assert structures["Healers Hut"] == 3 and structures["Banner Hall"] == 1
+    assert structures["Healers Hut"] == 3 and structures["Stag Banner Hall"] == 1
     assert "Mountain" not in structures
     kinds = {c["name"]: c["kind"] for c in board["cards"]}
     assert kinds["Loki 102"] == "rune" and kinds["Baldr favor 1"] == "favor" and kinds["Baldr 103"] == "card"
@@ -416,3 +416,57 @@ def test_levels_read_from_badges():
         img[y - t.shape[0] // 2:y - t.shape[0] // 2 + t.shape[0], x + 40:x + 40 + t.shape[1]] = t[:, :, None]
     found = {(round(b.x), round(b.y)): b.level for b in find_badges(img)}
     assert found == {GRID[0]: 1, GRID[1]: 2, GRID[2]: 3, GRID[3]: None}
+
+
+def test_clan_worked_out_from_clan_structures(tmp_path):
+    from nbg_tracker.gamedata import GameData, clan_from_structures
+    clans = GameData().structure_clans()
+    assert clans["Raven Banner Hall"] == "Raven" and clans["Hall Of Skalds"] == "Stag"
+    assert clan_from_structures(["Mine", "Berserker Camp"], clans) == "Wolf"
+    assert clan_from_structures(["Mine"], clans) is None
+
+    db = Database(tmp_path / "t.db")
+    rec = Recorder(db, structure_clans=clans)
+    rec.handle({"type": "run_start", "clan": "Unknown"})
+    rec.handle({"type": "board", "structures": [{"name": "Mine"}, {"name": "Raven Banner Hall"}]})
+    assert rec.live()["clan"] == "Raven"
+
+    old = make_run("Unknown", [True, False], ["Mine"])
+    db.save_run(old)
+    client = TestClient(create_app(db, structure_clans=clans))
+    bid = client.get(f"/api/runs/{old.id}").json()["battles"][1]["id"]
+    client.put(f"/api/battles/{bid}/structures", json=[{"name": "Stag Banner Hall", "x": 0.5, "y": 0.5}])
+    assert client.get(f"/api/runs/{old.id}").json()["clan"] == "Stag"
+
+
+def _run_with(levels_by_round, results, name="Mine"):
+    return Run(clan="Wolf", battles=[
+        Battle(round=i + 1, won=w, structures=[Structure(name, lv)] + [Structure("Farm")] * extra)
+        for i, (w, (lv, extra)) in enumerate(zip(results, levels_by_round))])
+
+
+def test_upgrade_value_and_tempo():
+    # Mine wins at level 3 and loses at level 1; winners also have bigger boards
+    runs = [_run_with([(1, 0), (1, 0), (3, 2), (3, 2)], [False, False, True, True]) for _ in range(6)]
+    rep = stats.report(runs)
+    [up] = [u for u in rep["upgrades"] if u["name"] == "Mine"]
+    assert set(up["levels"]) == {1, 3} and up["upgrade_gain"] > 0
+    t = {row["round"]: row for row in rep["tempo"]}
+    assert t[3]["won"]["structures"] == 3 and t[1]["lost"]["structures"] == 1
+
+
+def test_takeaways_only_with_evidence():
+    few = stats.report([make_run("Wolf", [True, False], ["Mine"])])
+    assert all(t["kind"] == "info" for t in few["takeaways"])  # just the "review more" hint
+    many = [make_run("Wolf", [True] * 8, ["Wolf Den"]) for _ in range(4)]
+    many += [make_run("Wolf", [False] * 8, ["Sheepfold"]) for _ in range(4)]
+    texts = " ".join(t["text"] for t in stats.report(many)["takeaways"])
+    assert "Wolf Den is your strongest" in texts and "Sheepfold is costing you" in texts
+
+
+def test_csv_export(tmp_path):
+    db = Database(tmp_path / "t.db")
+    db.save_run(make_run("Wolf", [True, False], ["Mine", "Farm"]))
+    text = TestClient(create_app(db)).get("/api/export.csv").text
+    lines = text.strip().splitlines()
+    assert lines[0].startswith("run_id,") and len(lines) == 3 and "Mine 1; Farm 1" in lines[1]

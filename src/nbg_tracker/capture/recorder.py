@@ -21,6 +21,7 @@ from datetime import datetime, timezone
 from typing import Callable
 
 from ..db import Database
+from ..gamedata import clan_from_structures
 from ..models import LIVES, ROUNDS_PER_SEASON, WINS_TO_CLEAR, Battle, Card, Run, Structure
 
 SEASONS = ["Spring", "Summer", "Autumn", "Winter"]
@@ -34,8 +35,9 @@ def _now() -> str:
 
 class Recorder:
     def __init__(self, db: Database, on_saved: Callable[[Run], None] | None = None,
-                 source: str = "log"):
+                 source: str = "log", structure_clans: dict[str, str] | None = None):
         self.db = db
+        self.structure_clans = structure_clans or {}
         self.on_saved = on_saved
         self.source = source
         self.run: Run | None = None
@@ -102,6 +104,10 @@ class Recorder:
                            for s in e.get("structures", [])]
         if "cards" in e:
             self.cards = [Card(c["name"], c.get("god"), c.get("kind")) for c in e["cards"]]
+        if self.run is not None and self.run.clan in (None, "", "Unknown"):
+            clan = clan_from_structures((s.name for s in self.structures), self.structure_clans)
+            if clan:
+                self.run.clan = clan
 
     def _on_structure_placed(self, e: dict) -> None:
         self.structures.append(Structure(e["name"], int(e.get("level", 1))))

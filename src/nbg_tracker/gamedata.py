@@ -79,9 +79,11 @@ class Piece:
     name: str
     god: str | None = None
     tier: str | None = None
+    clan: str | None = None  # for structures only one clan can build
 
 
 def _words(s: str) -> str:
+    s = s.replace("Hallof", "HallOf")
     s = re.sub(r"(?<=[a-z])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])", " ", s)
     return re.sub(r"\s+", " ", s.replace("_", " ")).strip()
 
@@ -91,9 +93,12 @@ def describe(asset: str) -> Piece:
     if "/Items/ItemData/" in asset:
         if "/Environment/" in asset or "/UpgradeItems/" in asset:
             return Piece("other", _words(stem))
+        clan = m.group(1) if (m := re.search(r"/ClanStructures/(\w+?)Structures/", asset)) else None
         if stem.startswith("BannerHall"):
-            return Piece("structure", "Banner Hall")
-        return Piece("structure", _words(stem))
+            return Piece("structure", f"{clan} Banner Hall" if clan else "Banner Hall", clan=clan)
+        if stem == "KaijaDenWarchief":
+            return Piece("structure", "Kaija Den", clan=clan)
+        return Piece("structure", _words(stem), clan=clan)
     if "/Players/Clans/Clans/" in asset:
         return Piece("clan", stem.removesuffix("Clan"))
     if m := re.search(r"/Cards/Patrons/(\w+)/ExtraCards/(\w+)/", asset):
@@ -119,9 +124,22 @@ class GameData:
     def structure_names(self) -> list[str]:
         return sorted({p.name for p in map(describe, self.assets.values()) if p.kind == "structure"})
 
+    def structure_clans(self) -> dict[str, str]:
+        """Structures only one clan can build, e.g. {"Raven Banner Hall": "Raven"}."""
+        return {p.name: p.clan for p in map(describe, self.assets.values()) if p.kind == "structure" and p.clan}
+
     def piece(self, guid: str) -> Piece:
         asset = self.assets.get(guid)
         return describe(asset) if asset else Piece("other", f"Unknown {guid[:8]}")
+
+
+def clan_from_structures(names, structure_clans: dict[str, str]) -> str | None:
+    """The clan a board belongs to, judged by its clan-only structures."""
+    votes: dict[str, int] = {}
+    for n in names:
+        if n in structure_clans:
+            votes[structure_clans[n]] = votes.get(structure_clans[n], 0) + 1
+    return max(votes, key=votes.get) if votes else None
 
 
 def catalog_from_log(player_log: str | Path) -> Path | None:

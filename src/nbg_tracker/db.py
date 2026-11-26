@@ -130,6 +130,28 @@ class Database:
             return [r[0] for r in self._conn.execute(
                 "SELECT screenshot FROM battles WHERE reviewed = 1 AND screenshot IS NOT NULL")]
 
+    def run_of_battle(self, battle_id: int) -> int | None:
+        with self._lock:
+            r = self._conn.execute("SELECT run_id FROM battles WHERE id = ?", (battle_id,)).fetchone()
+        return r[0] if r else None
+
+    def set_run_clan(self, run_id: int, clan: str) -> None:
+        with self._lock, self._conn:
+            self._conn.execute("UPDATE runs SET clan = ? WHERE id = ?", (clan, run_id))
+
+    def fill_unknown_clans(self, structure_clans: dict[str, str]) -> int:
+        """Name the clan of runs recorded as Unknown, from clan-only structures on their boards."""
+        from .gamedata import clan_from_structures
+        filled = 0
+        for run in self.load_runs():
+            if run.clan not in (None, "", "Unknown"):
+                continue
+            clan = clan_from_structures((s.name for b in run.battles for s in b.structures), structure_clans)
+            if clan:
+                self.set_run_clan(run.id, clan)
+                filled += 1
+        return filled
+
     def delete_run(self, run_id: int) -> bool:
         with self._lock, self._conn:
             return self._conn.execute("DELETE FROM runs WHERE id = ?", (run_id,)).rowcount > 0

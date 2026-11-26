@@ -76,6 +76,16 @@ td { border-bottom: 1px solid var(--grid); padding: 6px 8px 6px 0; vertical-alig
 td.num, th.num { text-align: right; }
 .scroll { overflow-x: auto; }
 .empty { color: var(--ink-2); padding: 24px 0; text-align: center; }
+/* takeaways */
+.takeaways { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.takeaways li { display: flex; gap: 10px; align-items: baseline; line-height: 1.45; }
+.takeaways .tag { flex: none; font-size: 11px; font-weight: 600; padding: 1px 7px; border-radius: 999px;
+  border: 1px solid var(--border); color: var(--ink-2); min-width: 52px; text-align: center; }
+.takeaways .tag.good { border-color: var(--pos); color: var(--ink); }
+.takeaways .tag.bad { border-color: var(--neg); color: var(--ink); }
+.legend { display: flex; gap: 14px; font-size: 12px; color: var(--ink-2); margin-bottom: 6px; }
+.legend i { display: inline-block; width: 14px; height: 2px; vertical-align: middle; margin-right: 5px; }
+.lvl { display: inline-block; min-width: 56px; font-variant-numeric: tabular-nums; }
 /* current run */
 #live { border-color: var(--pos); }
 #live[hidden] { display: none; }
@@ -129,6 +139,12 @@ a { color: var(--pos); }
 
   <section class="tiles" id="tiles"></section>
 
+  <section class="card" id="takeaways-card">
+    <h2>Takeaways</h2>
+    <p class="sub">What your games say so far. Findings only show once there's enough evidence behind them.</p>
+    <ul class="takeaways" id="takeaways"></ul>
+  </section>
+
   <section class="card">
     <h2>What's working</h2>
     <p class="sub">Extra wins per 100 battles while the piece is on your board, compared with your usual
@@ -141,6 +157,19 @@ a { color: var(--pos); }
     </div>
     <div id="impact"></div>
   </section>
+
+  <div class="grid2">
+    <section class="card">
+      <h2>Upgrade value</h2>
+      <p class="sub">Extra wins per 100 battles at each level, for structures you've had at more than one level.</p>
+      <div class="scroll" id="upgrades"></div>
+    </section>
+    <section class="card">
+      <h2>Tempo</h2>
+      <p class="sub">Average total structure levels on your board each round, in battles you won and lost.</p>
+      <div id="tempo"></div>
+    </section>
+  </div>
 
   <div class="grid2">
     <section class="card">
@@ -162,7 +191,7 @@ a { color: var(--pos); }
   </section>
 
   <section class="card">
-    <h2>Recent runs</h2>
+    <div class="live-head"><h2>Recent runs</h2><a href="/api/export.csv" download>Export all battles (CSV)</a></div>
     <div class="scroll" id="runs"></div>
   </section>
 
@@ -225,7 +254,7 @@ function render() {
     ["Battle win rate", pct(s.battle_win_rate)],
     ["Avg ELO change", s.avg_elo_delta == null ? "–" : (s.avg_elo_delta > 0 ? "+" : "") + num(s.avg_elo_delta, 0)],
   ].map(([l, v]) => `<div class="tile"><div class="label">${l}</div><div class="value">${v}</div></div>`).join("");
-  renderImpact(); renderClans(); renderRounds(); renderTrend(); renderRuns();
+  renderTakeaways(); renderImpact(); renderUpgrades(); renderTempo(); renderClans(); renderRounds(); renderTrend(); renderRuns();
 }
 
 function renderImpact() {
@@ -244,6 +273,57 @@ function renderImpact() {
       <div class="val">${r.impact > 0 ? "+" : ""}${num(r.impact)}<small>${r.battles} b · ${r.confidence}</small></div>`;
   }).join("") + `</div><div class="impact"><div></div><div class="axis-row"><span>−${num(max, 0)}</span><span>0</span><span>+${num(max, 0)}</span></div><div></div></div>`;
   bindTips(el);
+}
+
+function renderTakeaways() {
+  const items = data.takeaways || [];
+  const label = {good: "Working", bad: "Problem", info: "Note"};
+  $("#takeaways").innerHTML = items.length ? items.map((t) =>
+    `<li><span class="tag ${t.kind}">${label[t.kind] || "Note"}</span><span>${esc(t.text)}</span></li>`).join("")
+    : `<li class="status">Play and review a few runs to see findings here.</li>`;
+}
+
+function renderUpgrades() {
+  const rows = data.upgrades || [];
+  if (!rows.length) { $("#upgrades").innerHTML = `<div class="empty">Shows up once you've had the same structure at different levels in a few battles.</div>`; return; }
+  const cell = (v) => v ? `<span class="lvl" title="${v.battles} battles · ${pct(v.win_rate)} won · evidence ${v.confidence}">${v.impact > 0 ? "+" : ""}${num(v.impact)}<small style="color:var(--ink-2)"> ${v.battles}b</small></span>` : `<span class="lvl status">–</span>`;
+  $("#upgrades").innerHTML = `<table><thead><tr><th>Structure</th><th class="num">Lv 1</th><th class="num">Lv 2</th><th class="num">Lv 3</th><th class="num">Gain</th></tr></thead><tbody>` +
+    rows.map((r) => `<tr><td>${esc(r.name)}</td><td class="num">${cell(r.levels[1])}</td><td class="num">${cell(r.levels[2])}</td><td class="num">${cell(r.levels[3])}</td>
+      <td class="num">${r.upgrade_gain > 0 ? "+" : ""}${num(r.upgrade_gain)}</td></tr>`).join("") + `</tbody></table>`;
+}
+
+function renderTempo() {
+  const rows = (data.tempo || []).filter((r) => r.won.levels != null || r.lost.levels != null);
+  const el = $("#tempo");
+  if (rows.length < 2) { el.innerHTML = `<div class="empty">Shows up once a few reviewed rounds have boards.</div>`; return; }
+  const W = 600, H = 200, L = 30, R = 56, T = 10, B = 22;
+  const maxR = Math.max(...rows.map((r) => r.round)), minR = Math.min(...rows.map((r) => r.round));
+  const maxV = Math.max(4, ...rows.flatMap((r) => [r.won.levels || 0, r.lost.levels || 0]));
+  const x = (rnd) => L + (maxR === minR ? 0 : (rnd - minR) / (maxR - minR)) * (W - L - R);
+  const y = (v) => T + (1 - v / maxV) * (H - T - B);
+  const line = (key) => rows.filter((r) => r[key].levels != null)
+    .map((r, i) => `${i ? "L" : "M"}${x(r.round).toFixed(1)},${y(r[key].levels).toFixed(1)}`).join("");
+  const last = (key) => [...rows].reverse().find((r) => r[key].levels != null);
+  const ticks = [0, Math.round(maxV / 2), Math.round(maxV)].map((v) =>
+    `<line x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}" stroke="var(--grid)"/><text x="${L - 6}" y="${y(v) + 4}" text-anchor="end">${v}</text>`).join("");
+  const xt = rows.map((r) => `<text x="${x(r.round)}" y="${H - 6}" text-anchor="middle">${r.round}</text>`).join("");
+  const label = (key, text, colour) => { const r = last(key); return r ? `<text x="${x(r.round) + 6}" y="${y(r[key].levels) + 4}" style="fill:var(--ink-2)">${text}</text>` : ""; };
+  el.innerHTML = `<div class="legend"><span><i style="background:var(--pos)"></i>Won</span><span><i style="background:var(--neg)"></i>Lost</span></div>
+    <svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="Board levels by round in won and lost battles">
+    ${ticks}${xt}<path d="${line("lost")}" fill="none" stroke="var(--neg)" stroke-width="2"/>
+    <path d="${line("won")}" fill="none" stroke="var(--pos)" stroke-width="2"/>
+    ${label("won", "Won")}${label("lost", "Lost")}
+    <line id="txh" y1="${T}" y2="${H - B}" stroke="var(--axis)" visibility="hidden"/>
+    <rect x="${L}" y="0" width="${W - L - R}" height="${H}" fill="transparent" id="thit"/></svg>`;
+  const svg = el.querySelector("svg"), xh = el.querySelector("#txh");
+  el.querySelector("#thit").addEventListener("mousemove", (e) => {
+    const b = svg.getBoundingClientRect(), vx = ((e.clientX - b.left) / b.width) * W;
+    const r = rows.reduce((a, c) => Math.abs(x(c.round) - vx) < Math.abs(x(a.round) - vx) ? c : a);
+    xh.setAttribute("x1", x(r.round)); xh.setAttribute("x2", x(r.round)); xh.setAttribute("visibility", "visible");
+    const f = (v) => v.levels == null ? "–" : `${num(v.levels)} levels, ${num(v.structures)} structures (${v.battles} battles)`;
+    showTip(e, `<b>Round ${r.round}</b>Won: ${f(r.won)}<br>Lost: ${f(r.lost)}`);
+  });
+  el.querySelector("#thit").addEventListener("mouseleave", () => { tip.style.display = "none"; xh.setAttribute("visibility", "hidden"); });
 }
 
 function renderClans() {

@@ -24,6 +24,11 @@ gods and clans are winning for you.
 - **Current run**: while a run is in progress, the top of the dashboard shows the
   round, wins, losses and lives left, each battle so far, and your board right now
   with your past record for every structure on it.
+- **Clan** is worked out from clan-only structures on your board (e.g. Raven Banner
+  Hall), including for runs recorded before.
+- **Insights**: takeaways in plain words (only once the evidence holds up), each
+  structure's impact, upgrade value by level, tempo (board size in battles won vs
+  lost), clans, and where runs stall. All battles can be exported as CSV.
 - **Names** come from the game's `StreamingAssets/aa/catalog.bin`, found through the
   install path in the log, with a bundled copy as fallback. The save file is
   encrypted, so it is not read.

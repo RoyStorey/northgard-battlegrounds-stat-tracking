@@ -1,13 +1,15 @@
 """Local dashboard, review page and JSON API."""
 from __future__ import annotations
 
+import csv
+import io
 import re
 from importlib import resources
 from pathlib import Path
 from typing import Callable
 
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.responses import FileResponse, HTMLResponse, Response
 
 from . import stats
 from .db import Database
@@ -23,7 +25,8 @@ def _page(name: str) -> str:
 def create_app(db: Database, status: dict | None = None, shots_dir: str | Path | None = None,
                structure_names: list[str] | None = None,
                on_reviewed: Callable[[], None] | None = None,
-               live: Callable[[], dict] | None = None) -> FastAPI:
+               live: Callable[[], dict] | None = None,
+               structure_clans: dict[str, str] | None = None) -> FastAPI:
     app = FastAPI(title="Northgard Battlegrounds Tracker")
     status = status if status is not None else {}
     shots = Path(shots_dir) if shots_dir else None
@@ -56,6 +59,22 @@ def create_app(db: Database, status: dict | None = None, shots_dir: str | Path |
                 h = history.get(s["name"])
                 s["history"] = {k: h[k] for k in ("impact", "battles", "win_rate", "confidence")} if h else None
         return state
+
+    @app.get("/api/export.csv")
+    def export_csv() -> Response:
+        """One row per battle, for spreadsheets."""
+        buf = io.StringIO()
+        w = csv.writer(buf)
+        w.writerow(["run_id", "started_at", "clan", "warchief", "mode", "patch", "run_wins", "run_losses",
+                    "elo_before", "elo_after", "round", "season", "kind", "won", "structures", "cards", "reviewed"])
+        for r in db.load_runs():
+            for b in r.battles:
+                w.writerow([r.id, r.started_at, r.clan, r.warchief, r.mode, r.patch, r.wins, r.losses,
+                            r.elo_before, r.elo_after, b.round, b.season + 1, b.kind, int(b.won),
+                            "; ".join(f"{s.name} {s.level}" for s in b.structures if s.name != "?"),
+                            "; ".join(c.name for c in b.cards), int(b.reviewed)])
+        return Response(buf.getvalue(), media_type="text/csv",
+                        headers={"Content-Disposition": 'attachment; filename="battlegrounds-battles.csv"'})
 
     @app.get("/api/pieces")
     def pieces() -> dict:
@@ -91,6 +110,8 @@ def create_app(db: Database, status: dict | None = None, shots_dir: str | Path |
             raise HTTPException(422, f"invalid structures: {e}") from e
         if not db.set_battle_structures(battle_id, structures):
             raise HTTPException(404, "no such battle")
+        if structure_clans:
+            db.fill_unknown_clans(structure_clans)
         if on_reviewed:
             on_reviewed()
         return {"saved": len(structures)}
