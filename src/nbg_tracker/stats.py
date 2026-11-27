@@ -1,10 +1,9 @@
-"""Statistics: which pieces win for you, adjusted for how hard each stage is.
+"""Statistics: which pieces win for you.
 
-Late rounds are harder, and rare structures only show up late, so a raw win
-rate would make late-game pieces look bad. Each PvP battle therefore gets an
-*expected* win chance from your own record in that season. A piece's impact
-is how many more battles you win than expected while it is on your board,
-shrunk toward zero for small samples so a 3-0 fluke does not top the list.
+Structures, cards and gods are rated by the model in model.py, which credits
+a piece only for wins beyond what the season, your record so far and the size
+of your board already explain. Pairs use a simpler season-adjusted comparison
+(feature_impacts below).
 """
 from __future__ import annotations
 
@@ -14,6 +13,7 @@ from itertools import combinations
 from statistics import mean
 from typing import Callable, Iterable
 
+from .model import adjusted_impacts, situations
 from .models import Battle, Run
 
 SHRINK = 5.0  # pseudo-battles of "no effect" added to every feature
@@ -173,9 +173,10 @@ def _named(b: Battle) -> list:
     return [s for s in b.structures if s.name and s.name != "?"]
 
 
-def upgrade_value(battles: list[Battle], min_battles: int = MIN_BATTLES) -> list[dict]:
+def upgrade_value(sits, min_battles: int = MIN_BATTLES) -> list[dict]:
     """Impact of each structure split by its level, for structures seen at more than one level."""
-    rows = feature_impacts(battles, lambda b: [f"{s.name}\x00{s.level}" for s in _named(b)], min_battles)
+    rows = adjusted_impacts(sits, lambda b: [f"{s.name}\x00{s.level}" for s in _named(b)],
+                            lambda b: bool(_named(b)), min_battles)
     by_name: dict[str, dict] = defaultdict(dict)
     for r in rows:
         name, level = r["name"].split("\x00")
@@ -278,6 +279,9 @@ def report(runs: list[Run], patch: str | None = None, clan: str | None = None,
     """Everything the dashboard shows, for the filtered set of runs."""
     selected = filter_runs(runs, patch, clan, mode)
     battles = [b for _, b in _pvp(selected)]
+    sits = situations(selected)
+    has_board = lambda b: bool(_named(b))
+    has_cards = lambda b: bool(b.cards)
     rep = {
         "filters": {
             "patches": sorted({r.patch for r in runs if r.patch}, reverse=True),
@@ -285,15 +289,15 @@ def report(runs: list[Run], patch: str | None = None, clan: str | None = None,
             "modes": sorted({r.mode for r in runs if r.mode}),
         },
         "summary": summary(selected),
-        "structures": feature_impacts(battles, _structures),
-        "cards": feature_impacts(battles, _cards),
-        "gods": feature_impacts(battles, _gods),
+        "structures": adjusted_impacts(sits, _structures, has_board),
+        "cards": adjusted_impacts(sits, _cards, has_cards),
+        "gods": adjusted_impacts(sits, _gods, has_cards),
         "synergies": feature_impacts(battles, _pairs, MIN_PAIR_BATTLES),
         "clans": group_runs(selected, lambda r: r.clan),
         "warchiefs": group_runs(selected, lambda r: r.warchief),
         "rounds": by_round(selected),
         "trend": trend(selected),
-        "upgrades": upgrade_value(battles),
+        "upgrades": upgrade_value(sits),
         "tempo": tempo(battles),
         "recent_runs": [
             {k: v for k, v in r.to_dict().items() if k != "battles"}

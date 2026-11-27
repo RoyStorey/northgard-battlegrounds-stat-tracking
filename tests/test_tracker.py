@@ -27,9 +27,19 @@ def test_db_round_trip(tmp_path):
     assert db.delete_run(rid) and db.load_runs() == []
 
 
+def mixed_runs(spec, n_runs=12, rounds=10, seed=1):
+    """Runs with realistic mixed results: spec maps a structure to its win chance."""
+    import random
+    rng = random.Random(seed)
+    runs = []
+    for i in range(n_runs):
+        for name, p in spec.items():
+            runs.append(make_run("Wolf", [rng.random() < p for _ in range(rounds)], [name]))
+    return runs
+
+
 def test_impact_ranks_winning_piece_first():
-    runs = [make_run("Wolf", [True] * 8, ["Wolf Den"]) for _ in range(3)]
-    runs += [make_run("Wolf", [False] * 8, ["Sheepfold"]) for _ in range(3)]
+    runs = mixed_runs({"Wolf Den": 0.8, "Sheepfold": 0.25})
     rep = stats.report(runs)
     names = [r["name"] for r in rep["structures"]]
     assert names[0] == "Wolf Den" and names[-1] == "Sheepfold"
@@ -283,7 +293,8 @@ def test_review_api_saves_labels(tmp_path):
 
 def test_live_run_state(tmp_path):
     db = Database(tmp_path / "t.db")
-    db.save_run(make_run("Wolf", [True] * 4, ["Wolf Den"]))
+    for run in mixed_runs({"Wolf Den": 0.7, "Mine": 0.4}, n_runs=3):
+        db.save_run(run)
     rec = Recorder(db)
     assert rec.live() == {"in_run": False}
     for e in [{"type": "run_start", "clan": "Wolf", "mode": "ranked"},
@@ -302,7 +313,7 @@ def test_live_run_state(tmp_path):
     got = client.get("/api/live").json()
     assert got["in_run"] and got["wins"] == 2
     den, unknown = got["board"]["structures"]
-    assert den["history"]["battles"] == 4 and unknown["history"] is None
+    assert den["history"]["battles"] == 30 and unknown["history"] is None
 
 
 def test_tray_stops_on_ctrl_c(monkeypatch):
@@ -458,8 +469,7 @@ def test_upgrade_value_and_tempo():
 def test_takeaways_only_with_evidence():
     few = stats.report([make_run("Wolf", [True, False], ["Mine"])])
     assert all(t["kind"] == "info" for t in few["takeaways"])  # just the "review more" hint
-    many = [make_run("Wolf", [True] * 8, ["Wolf Den"]) for _ in range(4)]
-    many += [make_run("Wolf", [False] * 8, ["Sheepfold"]) for _ in range(4)]
+    many = mixed_runs({"Wolf Den": 0.8, "Sheepfold": 0.25})
     texts = " ".join(t["text"] for t in stats.report(many)["takeaways"])
     assert "Wolf Den is your strongest" in texts and "Sheepfold is costing you" in texts
 
@@ -504,3 +514,26 @@ def test_naming_once_fills_later_rounds(tmp_path):
     for b in later:
         assert sorted(s["name"] for s in b["structures"]) == ["Mine", "Wolf Den"]
         assert not b["reviewed"] and all(s["source"] == "auto" for s in b["structures"])
+
+
+def test_piece_bought_only_when_ahead_gets_no_free_credit():
+    """A piece added only once a run is going well should not look like the best piece."""
+    import random
+    rng = random.Random(3)
+    runs = []
+    for i in range(60):
+        skill = rng.random()  # some runs simply go better than others
+        battles, w, l = [], 0, 0
+        for rnd in range(1, 13):
+            board = [Structure("Mine")]
+            if w - l >= 3:
+                board.append(Structure("Draugr Tombs"))  # only built when far ahead; does nothing itself
+            won = rng.random() < 0.3 + 0.5 * skill
+            battles.append(Battle(round=rnd, won=won, structures=board))
+            w, l = w + won, l + (not won)
+        runs.append(Run(clan="Bear", battles=battles))
+    rows = {r["name"]: r for r in stats.report(runs)["structures"]}
+    tombs = rows["Draugr Tombs"]
+    assert tombs["win_rate"] > tombs["expected_win_rate"] - 0.05  # raw numbers look great...
+    assert tombs["win_rate"] > 0.6
+    assert abs(tombs["impact"]) < 6  # ...but the model gives it little credit
