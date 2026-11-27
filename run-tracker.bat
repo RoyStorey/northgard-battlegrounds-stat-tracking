@@ -10,11 +10,9 @@ if errorlevel 1 (
   echo.
 )
 
-echo Installing...
+echo Installing (the first time after an update can take a minute)...
+python -m pip install --quiet --upgrade .
 python -m pip install --quiet --force-reinstall --no-deps .
-if errorlevel 1 (
-  pip install --quiet --force-reinstall --no-deps .
-)
 
 echo Starting the tracker. Dashboard: http://127.0.0.1:8765/
 nbg-tracker run %*

@@ -11,6 +11,7 @@ import uvicorn
 from .capture import Recorder
 from .capture.logtail import JsonLinesParser, LogTailer, candidate_logs
 from .capture.nbg_log import NorthgardLogParser
+from .capture.cards import CardReader, CardTracker
 from .capture.screen import ScreenCapturer
 from .capture.savefile import Enricher
 from .db import Database
@@ -68,7 +69,9 @@ class Tracker:
         watchers: list = []
         if screenshots:
             try:
-                capturer = ScreenCapturer(recorder.handle, self.shots, self.recognizer, reader=self.learner)
+                cards = CardTracker(CardReader(), recorder.handle)
+                capturer = ScreenCapturer(recorder.handle, self.shots, self.recognizer, reader=self.learner,
+                                          cards=cards)
                 capturer.start()
                 self.capturer = capturer
                 self.learner.capturer = capturer

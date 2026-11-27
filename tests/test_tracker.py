@@ -587,3 +587,75 @@ def test_live_panel_editing(tmp_path):
     assert client.put("/api/live/clan", json={"clan": "Bear"}).status_code == 200
     recorder.handle({"type": "run_info", "clan": "Raven", "clan_source": "portrait"})
     assert recorder.live()["clan"] == "Bear"  # your pick isn't overwritten
+
+
+class _FakeCardReader:
+    """Stands in for screen reading: frames are dicts saying what's on screen."""
+
+    def read_favor(self, img):
+        return {g: tuple(v) for g, v in img["favor"].items()}
+
+    def read_offers(self, img):
+        return img["offers"]
+
+
+def _card_frames(monkeypatch):
+    from nbg_tracker.capture import cards
+    monkeypatch.setattr(cards.CardReader, "is_card_screen", staticmethod(lambda img: img["screen"] == "cards"))
+    monkeypatch.setattr(cards, "_at_1080", lambda img: img)
+    monkeypatch.setattr(cards.cv2, "resize", lambda a, *k, **kw: a)
+    monkeypatch.setattr(cards.cv2, "cvtColor", lambda a, *k: a)
+    return cards
+
+
+class _Frame(dict):
+    def __getitem__(self, k):
+        if isinstance(k, tuple):  # the title strip, used to notice rerolls
+            return _TitleKey(dict.__getitem__(self, "offers"))
+        return dict.__getitem__(self, k)
+
+
+class _TitleKey:
+    def __init__(self, offers):
+        self.v = "|".join(o["name"] for o in offers)
+
+    def tobytes(self):
+        return self.v.encode()
+
+
+def test_card_pick_from_favour_change(monkeypatch):
+    cards = _card_frames(monkeypatch)
+    out = []
+    t = cards.CardTracker(_FakeCardReader(), out.append)
+    offer1 = [{"name": "Lost Wanderer", "kind": "Gift", "gods": {}}, {"name": "Flurry of Blows", "kind": "Rune", "gods": {"Thor": 1}}]
+    offer2 = [{"name": "Call to Peace", "kind": "Blessing", "gods": {"Baldr": 1}},
+              {"name": "Beseech Thor", "kind": "Gift", "gods": {"Thor": 2}}, {"name": "Lost Ruins", "kind": "Gift", "gods": {}}]
+    fav0 = {"Thor": (0, 3), "Baldr": (1, 3)}
+    assert t.frame(_Frame(screen="cards", offers=offer1, favor=fav0))
+    assert t.frame(_Frame(screen="cards", offers=offer2, favor=fav0))  # rerolled
+    assert not t.frame(_Frame(screen="board", offers=offer2, favor=fav0))  # peeking: nothing changed yet
+    assert [e["type"] for e in out] == ["card_offer", "card_offer"]
+    t.frame(_Frame(screen="board", offers=offer2, favor={"Thor": (0, 3), "Baldr": (2, 3)}))
+    picked = [e for e in out if e["type"] == "card_picked"]
+    assert picked == [{"type": "card_picked", "name": "Call to Peace", "god": "Baldr", "kind": "blessing"}]
+
+    out.clear()  # a neutral card: settled when the battle starts
+    fav1 = {"Thor": (0, 3), "Baldr": (2, 3)}
+    t.frame(_Frame(screen="cards", offers=offer2, favor=fav1))
+    t.frame(_Frame(screen="board", offers=offer2, favor=fav1))
+    t.battle_starting()
+    assert [e["name"] for e in out if e["type"] == "card_picked"] == ["Lost Ruins"]
+
+
+def test_favour_becomes_cards():
+    from nbg_tracker.capture.cards import favor_tier
+    assert [favor_tier(v, t) for v, t in ((0, 3), (2, 3), (3, 5), (6, 8), (8, 8))] == [0, 0, 1, 2, 3]
+    rec = Recorder(Database(":memory:"))
+    rec.handle({"type": "run_start", "clan": "Bear"})
+    rec.handle({"type": "card_picked", "name": "Call to Peace", "god": "Baldr", "kind": "blessing"})
+    rec.handle({"type": "favor", "values": {"Baldr": [3, 5], "Thor": [1, 3]}})
+    rec.handle({"type": "favor", "values": {"Baldr": [5, 8], "Thor": [1, 3]}})
+    names = sorted(c.name for c in rec.cards)
+    assert names == ["Baldr favor 2", "Call to Peace"]
+    rec.handle({"type": "card_offer", "cards": [{"name": "Lost Ruins", "gods": {}}]})
+    assert rec.live()["offer"][0]["name"] == "Lost Ruins" and rec.live()["favor"]["Baldr"] == [5, 8]

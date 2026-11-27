@@ -222,6 +222,8 @@ svg text { fill: var(--ink-2); font-size: 11px; }
         <div class="section-title">Shop</div>
         <div class="shop" id="live-shop"></div>
         <p class="sub" style="margin-top:8px">Verdicts come from your past runs. Name a shop item once and it's recognised from then on.</p>
+        <div class="section-title">Fate cards</div>
+        <div id="live-cards"></div>
       </div>
     </div>
   </section>
@@ -395,7 +397,7 @@ const TAB_HELP = {
   gods: "Effect of holding cards from each god.",
   synergies: "Pairs of structures that win more together than you'd expect at that stage of a run.",
 };
-const NO_CARDS = "Fate cards and gods aren't tracked yet: the game only writes them to the log when it loads a run, and the save file is encrypted. Reading them from the screen is planned.";
+const NO_CARDS = "No Fate cards recorded yet. They're read off the card choice screen as you play (name, type and god), and the card you pick is worked out from your favour counters, so they'll fill in from your next runs.";
 
 function renderImpact() {
   $("#tab-help").textContent = TAB_HELP[tab];
@@ -552,6 +554,7 @@ async function loadLive() {
   $("#live-chips").innerHTML = st.battles.map((b) =>
     `<span class="chip ${b.won ? "w" : "l"}${b.kind === "pve" ? " pve" : ""}" title="Round ${b.round}${b.kind === "pve" ? " (PvE)" : ""}: ${b.won ? "won" : "lost"}">R${b.round} ${b.kind === "pve" ? "PvE " : ""}${b.won ? "W" : "L"}</span>`).join("")
     || `<span class="muted">No battles yet.</span>`;
+  renderLiveCards(st);
   const board = st.board;
   if (!board) {
     $("#live-shot").innerHTML = `<div class="empty" style="line-height:1.5">The board appears here once the tracker has seen your build phase with the game in front.</div>`;
@@ -588,6 +591,22 @@ async function loadLive() {
     loadLive();
   }));
 }
+function renderLiveCards(st) {
+  const V = {buy: "Take", skip: "Skip", neutral: "Neutral", unclear: "Unclear", "no data": "No data"};
+  const gods = (g) => Object.entries(g || {}).map(([k, n]) => `${k}${n > 1 ? " ×" + n : ""}`).join(", ") || "Neutral";
+  const offer = (st.offer || []).length ? `<div class="shop">` + st.offer.map((c) => `<div class="shoprow">
+      <span class="slot">${esc((c.kind || "?")[0])}</span>
+      <div><b>${esc(c.name)}</b> <span class="muted" style="font-size:12px">· ${esc(c.kind || "")} · ${esc(gods(c.gods))}</span>
+        <div class="muted" style="font-size:12px">${c.history ? `${sign(c.history.impact)} wins/100 · ${c.history.battles} battles · ${c.history.confidence}` : esc(c.text || "No history yet")}</div></div>
+      <span class="verdict ${c.verdict === "buy" ? "buy" : c.verdict === "skip" ? "skip" : ""}">${V[c.verdict] || ""}</span></div>`).join("") + `</div>`
+    : `<div class="muted" style="font-size:13px">No card offer open.</div>`;
+  const favor = Object.entries(st.favor || {}).map(([g, [v, t]]) => `<span class="medal none" style="padding-left:8px">${esc(g)} ${v}/${t}</span>`).join("");
+  const picked = (st.cards || []).filter((c) => c.kind !== "favor").map((c) => `<span class="chip" title="${esc(c.kind || "")}${c.god ? " · " + esc(c.god) : ""}">${esc(c.name)}</span>`).join("");
+  $("#live-cards").innerHTML = offer +
+    `<div class="medals" style="margin-top:10px">${favor || `<span class="muted" style="font-size:13px">Favour appears once a god counter shows.</span>`}</div>` +
+    `<div class="chips" style="margin-top:8px">${picked || `<span class="muted" style="font-size:13px">No cards picked yet this run.</span>`}</div>`;
+}
+
 $("#live-structures").addEventListener("focusin", () => { liveEditing = true; });
 $("#live-structures").addEventListener("input", () => { liveEditing = true; $("#live-saved").textContent = ""; });
 $("#live-save").addEventListener("click", async () => {

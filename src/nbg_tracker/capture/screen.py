@@ -84,8 +84,9 @@ class ScreenCapturer:
     def __init__(self, emit: Callable[[dict], None], shots_dir: str | Path,
                  recognizer: Recognizer | None = None, grab: Callable[[], Image.Image | None] | None = None,
                  interval: float = 1.5, view_check: Callable[[Image.Image], bool] = is_build_view,
-                 reader=None):
-        """reader: reads the shop and clan off a frame (learning.Learner); optional."""
+                 reader=None, cards=None):
+        """reader: reads the shop and clan off a frame (learning.Learner); optional.
+        cards: follows Fate card screens and favour (cards.CardTracker); optional."""
         self.emit = emit
         self.shots_dir = Path(shots_dir)
         self.shots_dir.mkdir(parents=True, exist_ok=True)
@@ -94,6 +95,7 @@ class ScreenCapturer:
         self.interval = interval
         self.view_check = view_check
         self.reader = reader
+        self.cards = cards
         self.building = False
         self.latest: Image.Image | None = None
         self.latest_quality = -1
@@ -124,6 +126,12 @@ class ScreenCapturer:
                 except Exception:
                     log.exception("screen grab failed")
                     img = None
+                if img is not None and self.cards is not None:
+                    try:
+                        if self.cards.frame(img):
+                            img = None  # the card choice screen, not the board
+                    except Exception:
+                        log.exception("card screen check failed")
                 if img is not None and not self._is_build_view(img):
                     img = None  # battle view: the opponent's village is on screen too
                 if img is not None:
@@ -152,6 +160,8 @@ class ScreenCapturer:
         try:
             found = self.recognizer.recognize(img) if self.recognizer else []
             shop = self.reader.read_shop(img) if self.reader else []
+            if self.cards is not None:
+                self.cards.update_favor(img)
             clan = self.reader.read_clan(img) if self.reader else None
             if clan:
                 self.emit({"type": "run_info", "clan": clan, "clan_source": "portrait"})
@@ -169,6 +179,9 @@ class ScreenCapturer:
         kind = event.get("type")
         if kind == "run_start":
             self.round, self.live = 0, None
+            if self.cards is not None:
+                self.cards.reset()
+                self.cards.favor = {}
             self._begin_build()
         elif kind == "battle_result":
             self.round = event.get("round", self.round + 1)
@@ -186,6 +199,11 @@ class ScreenCapturer:
 
     def _battle_starting(self) -> None:
         self.building = False
+        if self.cards is not None:
+            try:
+                self.cards.battle_starting()
+            except Exception:
+                log.exception("settling the card offer failed")
         with self._lock:
             img, self.latest, self.latest_quality = self.latest, None, -1
         if img is None:

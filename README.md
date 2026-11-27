@@ -31,6 +31,10 @@ gods and clans are winning for you.
   when already winning doesn't take credit for those wins.
 - **Current run panel**: name structures and pick your clan while you play; the
   tracker learns from it at once. Shop items you name are recognised and rated.
+- **Fate cards and favour** are read off the screen: each card offered (name, type,
+  god, text) by text recognition, the favour counters by their god icons, and the
+  card you took from which god's favour went up. Neutral cards are recorded when
+  they were the only neutral card offered.
 - **Clan cards** with bronze (5 wins), silver (8) and gold (10) medals.
 - **Insights**: takeaways in plain words (only once the evidence holds up), each
   structure's impact, upgrade value by level, tempo (board size in battles won vs

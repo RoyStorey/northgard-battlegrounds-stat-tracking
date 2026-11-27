@@ -44,6 +44,8 @@ class Recorder:
         self.structures: list[Structure] = []
         self.cards: list[Card] = []
         self.shot: str | None = None
+        self.offer: list[dict] = []  # the Fate cards on offer right now
+        self.favor: dict[str, list[int]] = {}  # {god: [favour, next threshold]}
         self.paused = False
         self.saving = True  # off while catching up on a log written before the tracker started
         self._lock = threading.Lock()
@@ -66,6 +68,8 @@ class Recorder:
                 "lives_left": max(0, LIVES - run.losses),
                 "battles": [{"round": b.round, "won": b.won, "kind": b.kind} for b in run.battles],
                 "cards": [{"name": c.name, "god": c.god, "kind": c.kind} for c in self.cards],
+                "offer": [dict(c) for c in self.offer],
+                "favor": {g: list(v) for g, v in self.favor.items()},
             }
 
     def handle(self, event: dict) -> None:
@@ -83,6 +87,7 @@ class Recorder:
                        mode=e.get("mode"), started_at=e.get("time") or _now(),
                        elo_before=e.get("elo"), source=self.source)
         self.structures, self.cards, self.shot = [], [], None
+        self.offer, self.favor = [], {}
 
     def _on_screenshot(self, e: dict) -> None:
         self.shot = e.get("file")
@@ -142,6 +147,20 @@ class Recorder:
 
     def _on_card_picked(self, e: dict) -> None:
         self.cards.append(Card(e["name"], e.get("god"), e.get("kind")))
+        self.offer = []
+
+    def _on_card_offer(self, e: dict) -> None:
+        self.offer = e.get("cards", [])
+
+    def _on_favor(self, e: dict) -> None:
+        """Favour counters read off the screen: keep one "<God> favor <tier>" entry per god."""
+        from .cards import favor_tier
+        self.favor = {g: list(v) for g, v in (e.get("values") or {}).items()}
+        self.cards = [c for c in self.cards if c.kind != "favor"]
+        for god, (value, threshold) in self.favor.items():
+            tier = favor_tier(value, threshold)
+            if tier:
+                self.cards.append(Card(f"{god} favor {tier}", god, "favor"))
 
     def _on_battle_result(self, e: dict) -> None:
         if self.run is None:

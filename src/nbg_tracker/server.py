@@ -52,10 +52,10 @@ def create_app(db: Database, status: dict | None = None, shots_dir: str | Path |
     def report(patch: str | None = None, clan: str | None = None, mode: str | None = None) -> dict:
         return stats.report(db.load_runs(), patch or None, clan or None, mode or None) | {"status": status}
 
-    def _history() -> dict[str, dict]:
-        rows = stats.report(db.load_runs())["structures"]
+    def _history(key: str = "structures", rep: dict | None = None) -> dict[str, dict]:
+        rows = (rep or stats.report(db.load_runs()))[key]
         keep = ("impact", "battles", "win_rate", "expected_win_rate", "confidence", "runs", "usage")
-        return {r["name"]: {k: r[k] for k in keep} for r in rows}
+        return {r["name"]: {k: r.get(k) for k in keep} for r in rows}
 
     def _verdict(h: dict | None) -> str:
         if not h:
@@ -69,9 +69,15 @@ def create_app(db: Database, status: dict | None = None, shots_dir: str | Path |
         state = live() if live else {"in_run": False}
         state["clans"] = CLANS
         state["structure_names"] = sorted(set(structure_names or []))
+        rep = stats.report(db.load_runs()) if state.get("in_run") else None
+        if state.get("offer"):
+            card_history = _history("cards", rep)
+            for c in state["offer"]:
+                c["history"] = card_history.get(c["name"])
+                c["verdict"] = _verdict(c["history"])
         board = state.get("board") or {}
         if board:
-            history = _history()
+            history = _history("structures", rep)
             on_board = {s["name"] for s in board.get("structures", [])}
             for s in board.get("structures", []):
                 s["history"] = history.get(s["name"])
