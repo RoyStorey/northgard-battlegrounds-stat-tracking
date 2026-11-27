@@ -11,6 +11,7 @@
 from __future__ import annotations
 
 import logging
+import re
 import threading
 import time
 from pathlib import Path
@@ -91,15 +92,22 @@ class Learner:
         return [self.shop.recall(tile)[0] for tile in shop_slots(img)]
 
     # ---- the current-run panel
-    def _live_frame(self):
-        img = cv2.imread(str(self.shots_dir / "live.jpg"))
+    def _live_frame(self, frame: str | None = None):
+        """The live frame you were looking at (by name), or the latest one."""
+        if frame is not None and not re.fullmatch(r"live(-\d+)?\.jpg", frame):
+            raise LookupError("not a live frame")
+        if frame is None and self.capturer is not None and self.capturer.live:
+            frame = self.capturer.live.get("file")
+        img = cv2.imread(str(self.shots_dir / (frame or "live.jpg")))
         if img is None:
-            raise LookupError("no live board yet")
+            raise LookupError("that board frame is gone; refresh and try again")
         return img
 
-    def label_live(self, marks: list[dict]) -> int:
-        """You named structures on the current board: keep that frame and learn from it."""
-        img = self._live_frame()
+    def label_live(self, marks: list[dict], frame: str | None = None) -> int:
+        """You named structures on the board you were looking at: keep that frame and learn from it."""
+        if frame is None and self.capturer is not None and self.capturer.live:
+            frame = self.capturer.live.get("file")
+        img = self._live_frame(frame)
         name = f"label-{time.strftime('%Y%m%d-%H%M%S')}.jpg"
         cv2.imwrite(str(self.shots_dir / name), img, [cv2.IMWRITE_JPEG_QUALITY, 90])
         rows = [(m["name"], int(m.get("level") or 1), float(m["x"]), float(m["y"]))
@@ -107,7 +115,7 @@ class Learner:
         self.db.add_labels(name, rows)
         with self._lock:
             learned = self.recognizer.learn(name, rows)
-        if self.capturer is not None and self.capturer.live:
+        if self.capturer is not None and self.capturer.live and self.capturer.live.get("file") == frame:
             self.capturer.live["structures"] = [
                 {"name": m.get("name") or "?", "level": int(m.get("level") or 1), "x": m["x"], "y": m["y"]} for m in marks]
         if self.recorder is not None:  # the next battle's board uses your names
@@ -115,8 +123,8 @@ class Learner:
                 {"name": n, "level": lv, "x": x, "y": y, "source": "user"} for n, lv, x, y in rows]})
         return learned
 
-    def label_shop(self, slot: int, name: str) -> None:
-        tiles = shop_slots(self._live_frame())
+    def label_shop(self, slot: int, name: str, frame: str | None = None) -> None:
+        tiles = shop_slots(self._live_frame(frame))
         if not 0 <= slot < len(tiles):
             raise IndexError("no such shop slot")
         file = f"shop-{time.strftime('%Y%m%d-%H%M%S')}-{slot}.png"

@@ -106,11 +106,14 @@ def create_app(db: Database, status: dict | None = None, shots_dir: str | Path |
         return state
 
     @app.put("/api/live/structures")
-    def live_structures(body: list[dict]) -> dict:
+    def live_structures(body: list[dict] | dict) -> dict:
+        """Either a list of structures, or {"frame": <live frame shown>, "structures": [...]}."""
         if not learner:
             raise HTTPException(409, "not recording")
+        frame = body.get("frame") if isinstance(body, dict) else None
+        marks = body.get("structures", []) if isinstance(body, dict) else body
         try:
-            return {"learned": learner.label_live(body)}
+            return {"learned": learner.label_live(marks, frame)}
         except (LookupError, KeyError, ValueError) as e:
             raise HTTPException(409, str(e)) from e
 
@@ -120,7 +123,7 @@ def create_app(db: Database, status: dict | None = None, shots_dir: str | Path |
         if not learner or not name:
             raise HTTPException(422, "name required")
         try:
-            learner.label_shop(slot, name)
+            learner.label_shop(slot, name, body.get("frame"))
         except (LookupError, IndexError) as e:
             raise HTTPException(409, str(e)) from e
         return {"slot": slot, "name": name}

@@ -219,7 +219,11 @@ svg text { fill: var(--ink-2); font-size: 11px; }
         <div class="section-title">Your board</div>
         <div class="editlist" id="live-structures"></div>
         <div style="display:flex;gap:8px;align-items:center;margin-top:8px">
-          <button class="primary" id="live-save">Save names</button><span id="live-saved" class="saved"></span>
+          <button class="primary" id="live-save">Save names</button>
+          <button id="live-discard" hidden>Discard</button><span id="live-saved" class="saved"></span>
+        </div>
+        <div class="muted" id="live-paused" hidden style="font-size:12px;margin-top:6px">
+          Board paused while you edit, so the numbers stay put. Save or Discard to see the latest frame.
         </div>
         <div class="section-title">Shop</div>
         <div class="shop" id="live-shop"></div>
@@ -583,7 +587,11 @@ function renderLibrary() {
 ["#lib-search", "#lib-god", "#lib-kind", "#lib-sort"].forEach((s) => $(s).addEventListener("input", renderLibrary));
 
 /* ---------- current run ---------- */
-let liveEditing = false, liveKey = "";
+let liveEditing = false, liveKey = "", liveFrame = null;
+function setEditing(on) {
+  liveEditing = on;
+  $("#live-discard").hidden = !on; $("#live-paused").hidden = !on;
+}
 async function loadLive() {
   let st;
   try { st = await (await fetch("/api/live")).json(); } catch { return; }
@@ -614,11 +622,12 @@ async function loadLive() {
     $("#live-structures").innerHTML = ""; $("#live-shop").innerHTML = "";
     return;
   }
-  $("#live-shot").innerHTML = `<img src="/shots/live.jpg?t=${encodeURIComponent(board.updated)}" alt="Your board right now">` +
-    board.structures.map((s, i) => `<span class="pin${s.name === "?" ? " unknown" : ""}" style="left:${s.x * 100}%;top:${s.y * 100}%" title="${esc(s.name)}">${i + 1}</span>`).join("");
-  const key = board.updated + JSON.stringify(board.structures.map((s) => [s.name, s.level]));
+  // the picture, the pins and the list are one unit: they only change together, and not while you edit
+  const key = board.file + "|" + board.updated + JSON.stringify(board.structures.map((s) => [s.name, s.level]));
   if (!liveEditing && key !== liveKey) {
-    liveKey = key;
+    liveKey = key; liveFrame = board.file;
+    $("#live-shot").innerHTML = `<img src="/shots/${encodeURIComponent(board.file)}?t=${encodeURIComponent(board.updated)}" alt="Your board">` +
+      board.structures.map((s, i) => `<span class="pin${s.name === "?" ? " unknown" : ""}" style="left:${s.x * 100}%;top:${s.y * 100}%" title="${esc(s.name)}">${i + 1}</span>`).join("");
     $("#live-structures").innerHTML = board.structures.length ? board.structures.map((s, i) => {
       const h = s.history;
       return `<div class="editrow" data-i="${i}" data-x="${s.x}" data-y="${s.y}">
@@ -628,6 +637,7 @@ async function loadLive() {
         <span class="val" title="${h ? `${h.battles} battles · evidence ${h.confidence}` : ""}">${h ? sign(h.impact) : `<span class="muted">–</span>`}</span></div>`;
     }).join("") : `<div class="muted">No structures found on this frame.</div>`;
   }
+  if (document.activeElement && document.activeElement.closest("#live-shop")) return;  // don't wipe a shop name being typed
   const shop = board.shop || [];
   const V = {buy: "Buy", skip: "Skip", neutral: "Neutral", unclear: "Unclear", "no data": "No data", unknown: ""};
   $("#live-shop").innerHTML = shop.length ? shop.map((s) => `<div class="shoprow">
@@ -640,7 +650,8 @@ async function loadLive() {
   $("#live-shop").querySelectorAll("button[data-slot]").forEach((b) => b.addEventListener("click", async () => {
     const input = $(`#live-shop input[data-slot="${b.dataset.slot}"]`);
     if (!input.value.trim()) return;
-    await fetch(`/api/live/shop/${b.dataset.slot}`, {method: "PUT", headers: {"Content-Type": "application/json"}, body: JSON.stringify({name: input.value.trim()})});
+    await fetch(`/api/live/shop/${b.dataset.slot}`, {method: "PUT", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({name: input.value.trim(), frame: liveFrame})});
     loadLive();
   }));
 }
@@ -660,14 +671,19 @@ function renderLiveCards(st) {
     `<div class="chips" style="margin-top:8px">${picked || `<span class="muted" style="font-size:13px">No cards picked yet this run.</span>`}</div>`;
 }
 
-$("#live-structures").addEventListener("focusin", () => { liveEditing = true; });
-$("#live-structures").addEventListener("input", () => { liveEditing = true; $("#live-saved").textContent = ""; });
+$("#live-structures").addEventListener("focusin", () => setEditing(true));
+$("#live-structures").addEventListener("input", () => { setEditing(true); $("#live-saved").textContent = ""; });
 $("#live-save").addEventListener("click", async () => {
-  const body = [...document.querySelectorAll("#live-structures .editrow")].map((r) => ({
+  const structures = [...document.querySelectorAll("#live-structures .editrow")].map((r) => ({
     name: r.querySelector("input").value.trim() || "?", level: +r.querySelector("select").value, x: +r.dataset.x, y: +r.dataset.y}));
-  const res = await fetch("/api/live/structures", {method: "PUT", headers: {"Content-Type": "application/json"}, body: JSON.stringify(body)});
+  const res = await fetch("/api/live/structures", {method: "PUT", headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({frame: liveFrame, structures})});
   $("#live-saved").textContent = res.ok ? "Saved – the tracker will recognise these from now on." : "Couldn't save: " + (await res.text());
-  liveEditing = false; liveKey = ""; loadLive();
+  setEditing(false); liveKey = ""; loadLive();
+});
+$("#live-discard").addEventListener("click", () => {
+  if (document.activeElement) document.activeElement.blur();
+  setEditing(false); liveKey = ""; $("#live-saved").textContent = ""; loadLive();
 });
 $("#live-clan").addEventListener("change", async (e) => {
   if (!e.target.value) return;

@@ -260,7 +260,19 @@ class Recognizer:
             if b.level is not None:
                 level = b.level  # the badge's number beats the level of the matched example
             out.append(Structure(name, level, round(cx / w, 4), round(max(cy, 0) / h, 4), "auto"))
-        return out
+        return reading_order(out)
+
+
+def reading_order(structures: list[Structure]) -> list[Structure]:
+    """Top row first, left to right. Rows of tiles share a height on screen, so this order
+    stays the same when the camera pans or zooms (unlike detection order)."""
+    rows: list[list[Structure]] = []
+    for s in sorted(structures, key=lambda s: s.y):
+        if rows and abs(s.y - rows[-1][-1].y) < 0.035:
+            rows[-1].append(s)
+        else:
+            rows.append([s])
+    return [s for row in rows for s in sorted(row, key=lambda s: s.x)]
 
 
 def _nearest(badges: list[Badge], x: float, y: float) -> Badge | None:

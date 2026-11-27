@@ -24,6 +24,7 @@ from ..vision import Recognizer, frame_quality, is_build_view
 log = logging.getLogger(__name__)
 
 WINDOW_TITLE = "Northgard Battlegrounds"
+LIVE_FRAMES_KEPT = 30  # about two minutes of live frames, at one every ~4 seconds
 
 
 class GameWindow:
@@ -165,13 +166,17 @@ class ScreenCapturer:
             clan = self.reader.read_clan(img) if self.reader else None
             if clan:
                 self.emit({"type": "run_info", "clan": clan, "clan_source": "portrait"})
+            # each live frame is kept under its own name for a while, so names you type
+            # on the panel are applied to the frame you were looking at, not a newer one
+            self._live_n = (getattr(self, "_live_n", 0) + 1) % LIVE_FRAMES_KEPT
+            frame = f"live-{self._live_n}.jpg"
             tmp = self.shots_dir / "live.tmp.jpg"
             img.save(tmp, format="JPEG", quality=80)
-            tmp.replace(self.shots_dir / "live.jpg")
+            tmp.replace(self.shots_dir / frame)
         except Exception:
             log.exception("live board update failed")
             return
-        self.live = {"file": "live.jpg", "updated": datetime.now().isoformat(timespec="seconds"),
+        self.live = {"file": frame, "updated": datetime.now().isoformat(timespec="seconds"),
                      "structures": [{"name": s.name, "level": s.level, "x": s.x, "y": s.y} for s in found],
                      "shop": shop, "clan_guess": clan}
 

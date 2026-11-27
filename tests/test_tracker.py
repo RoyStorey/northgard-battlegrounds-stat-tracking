@@ -564,22 +564,23 @@ def test_live_panel_editing(tmp_path):
     recorder = Recorder(db)
     recorder.handle({"type": "run_start", "clan": "Unknown"})
     img = _board_image([("Mine", *GRID[0]), ("Farm", *GRID[1])])
-    cv2.imwrite(str(shots / "live.jpg"), img)
+    cv2.imwrite(str(shots / "live-3.jpg"), img)
     found = rec.recognize(img)
 
     class Cap:
-        live = {"file": "live.jpg", "updated": "now", "shop": [None] * 4,
+        live = {"file": "live-3.jpg", "updated": "now", "shop": [None] * 4,
                 "structures": [{"name": s.name, "level": s.level, "x": s.x, "y": s.y} for s in found]}
 
     learner.recorder, learner.capturer = recorder, Cap()
     client = TestClient(create_app(db, shots_dir=shots, learner=learner, structure_names=["Mine", "Farm"],
                                    live=lambda: dict(recorder.live(), board=Cap.live)))
     marks = [dict(m, name="Mine" if m["x"] < 0.4 else "Farm") for m in Cap.live["structures"]]
-    assert client.put("/api/live/structures", json=marks).json() == {"learned": 2}
+    assert client.put("/api/live/structures", json={"frame": "live-3.jpg", "structures": marks}).json() == {"learned": 2}
+    assert client.put("/api/live/structures", json={"frame": "../t.db", "structures": marks}).status_code == 409
     assert sorted(s.name for s in rec.recognize(img)) == ["Farm", "Mine"]  # learned at once
     assert sorted(s.name for s in recorder.structures) == ["Farm", "Mine"]  # next battle uses your names
 
-    assert client.put("/api/live/shop/1", json={"name": "Mine"}).status_code == 200
+    assert client.put("/api/live/shop/1", json={"name": "Mine", "frame": "live-3.jpg"}).status_code == 200
     assert learner.read_shop(img)[1] == "Mine"
     live = client.get("/api/live").json()
     assert live["board"]["shop"][1]["name"] == "Mine" and live["board"]["shop"][1]["owned"]
@@ -708,3 +709,12 @@ def test_card_library_builds_itself(tmp_path):
     assert (flurry["offered"], flurry["picked"], flurry["god"], flurry["favor"]) == (2, 1, "Thor", 1)
     assert flurry["text"] == "Target MELEE. Gain 10 Crit Chance." and flurry["pick_rate"] == 0.5
     assert cards["Beseech Thor"]["favor"] == 2 and cards["Beseech Thor"]["picked"] == 0
+
+
+def test_structures_numbered_in_reading_order():
+    from nbg_tracker.vision import reading_order
+    # the same board seen twice, the camera panned in between: order stays the same
+    for dx, dy in ((0, 0), (0.12, -0.07)):
+        pts = [("c", 0.5 + dx, 0.62 + dy), ("a", 0.3 + dx, 0.40 + dy), ("d", 0.7 + dx, 0.61 + dy), ("b", 0.62 + dx, 0.41 + dy)]
+        got = reading_order([Structure(n, 1, x, y) for n, x, y in pts])
+        assert [s.name for s in got] == ["a", "b", "c", "d"]
