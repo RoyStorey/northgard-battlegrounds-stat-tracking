@@ -595,6 +595,13 @@ def test_card_titles_cleaned_and_matched():
     assert clean_title("BeseechThor") == "Beseech Thor"
     assert clean_title("2 Lost Ruins") == "Lost Ruins"
     assert card_key("Callto Peace") == card_key("Call to Peace")
+    assert clean_title("XTransmute Weapons X") == "Transmute Weapons"
+    assert clean_title("Risky Reroll") == "Risky Reroll"
+    from nbg_tracker.capture.cards import tidy_text
+    assert tidy_text("Target UNIT Gain3Damage foreach empty colonized tile") == \
+        "Target UNIT Gain 3 Damage for each empty colonized tile"
+    assert tidy_text("Target Common.TRANSFORM intoanUncommon") == "Target Common. TRANSFORM into an Uncommon"
+    assert tidy_text("Target MELEE TRANSFORMinto a RANGED") == "Target MELEE TRANSFORM into a RANGED"
 
 
 def _tracker_with_offer(offers, before):

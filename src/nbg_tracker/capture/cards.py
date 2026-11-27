@@ -13,7 +13,7 @@ Nothing here needs you to type anything in:
   whose favour went up, by how much, must match exactly one card on offer.
   Anything uncertain (a misread counter, a neutral card, two matching cards)
   is not recorded rather than guessed.
-* Cards are found by their type word (GIFT / RUNE / BLESSING) wherever they're
+* Cards are found by their type word (GIFT / RUNE / BLESSING / SPELL) wherever they're
   drawn, and only read once the screen has stopped moving.
 
 Positions are for a 1080-pixel-high screen; other sizes are scaled to it.
@@ -130,7 +130,7 @@ class CardReader:
                 for b, t, _ in (engine(img)[0] or [])]
 
     def read_offers(self, img) -> list[dict]:
-        """The cards on offer, found by their type word (GIFT / RUNE / BLESSING) wherever they're
+        """The cards on offer, found by their type word (GIFT / RUNE / BLESSING / SPELL) wherever they're
         drawn: the name sits just above it, the description below. Returns [] unless every card
         reads cleanly, so a half-drawn or animating screen is simply tried again."""
         bgr = _at_1080(img)
@@ -162,7 +162,7 @@ class CardReader:
                     lines.append([(y, x, t)])
             text = " ".join(" ".join(t for _, _, t in sorted(line, key=lambda b: b[1])) for line in lines)
             scale = gap / 50  # name-to-type distance is 50 px at full size
-            offers.append({"name": title, "kind": kind, "text": text.strip(),
+            offers.append({"name": title, "kind": kind, "text": tidy_text(text),
                            "gods": self._card_gods(gray, ax, ay - gap, scale)})
         return offers
 
@@ -196,7 +196,7 @@ class CardReader:
         return gods
 
 
-KINDS = {"gift": "Gift", "rune": "Rune", "blessing": "Blessing"}
+KINDS = {"gift": "Gift", "rune": "Rune", "blessing": "Blessing", "spell": "Spell"}
 
 
 def _letters(text: str) -> str:
@@ -210,6 +210,8 @@ def card_key(name: str) -> str:
 
 def clean_title(text: str) -> str:
     """Drop the banner's ornaments (read as X or symbols) and restore missing spaces."""
+    text = re.sub(r"^[Xx✕×]+(?=[A-Z])", "", text.strip())  # an ornament stuck to the first word
+    text = re.sub(r"(?<=[a-z])[Xx✕×]+$", "", text)  # ...or to the last one
     words = [w for w in re.split(r"\s+", text) if w]
     while words and (len(_letters(words[0])) <= 1 or not re.search(r"[A-Za-z]{2}", words[0])):
         words.pop(0)
@@ -218,6 +220,24 @@ def clean_title(text: str) -> str:
     title = " ".join(re.sub(r"[^A-Za-z'\-]", "", w) for w in words)
     title = re.sub(r"(?<=[a-z])(?=[A-Z])", " ", title)  # BeseechThor -> Beseech Thor
     return re.sub(r"\s+", " ", title).strip()
+
+
+_GLUED = {"foreach": "for each", "intoan": "into an", "intoa": "into a", "ofall": "of all", "toall": "to all",
+          "foreveryadjacent": "for every adjacent", "eachadjacent": "each adjacent", "withthor": "with Thor"}
+
+
+def tidy_text(text: str) -> str:
+    """Put back spaces the text reader drops: "Gain3Damage foreach" -> "Gain 3 Damage for each"."""
+    text = re.sub(r"(?<=[a-z])(?=[A-Z])", " ", text)
+    text = re.sub(r"(?<=[A-Z]{3})(?=[a-z]{2})", " ", text)  # TRANSFORMinto -> TRANSFORM into
+    text = re.sub(r"(?<=[A-Za-z])(?=\d)|(?<=\d)(?=[A-Za-z])", " ", text)
+    text = re.sub(r"\.(?=[A-Za-z])", ". ", text)
+    words = []
+    for w in text.split():
+        core = w.rstrip(".,")
+        fixed = _GLUED.get(core.lower())
+        words.append(fixed + w[len(core):] if fixed else w)
+    return re.sub(r"\s+", " ", " ".join(words)).strip()
 
 
 def favor_tier(value: int, threshold: int) -> int:
