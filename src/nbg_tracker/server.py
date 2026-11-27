@@ -64,6 +64,19 @@ def create_app(db: Database, status: dict | None = None, shots_dir: str | Path |
             return "unclear"
         return "buy" if h["impact"] >= 2 else "skip" if h["impact"] <= -2 else "neutral"
 
+    @app.get("/api/cards")
+    def card_library() -> list[dict]:
+        """Every card the tracker has seen, with how often it's offered and taken and how it does."""
+        effect = {r["name"]: r for r in stats.report(db.load_runs())["cards"]}
+        out = []
+        for c in db.card_catalog():
+            e = effect.get(c["name"])
+            c["pick_rate"] = c["picked"] / c["offered"] if c["offered"] else None
+            c["effect"] = {k: e.get(k) for k in ("impact", "battles", "win_rate", "expected_win_rate",
+                                                 "confidence", "runs")} if e else None
+            out.append(c)
+        return out
+
     @app.get("/api/live")
     def live_run() -> dict:
         state = live() if live else {"in_run": False}
@@ -72,7 +85,12 @@ def create_app(db: Database, status: dict | None = None, shots_dir: str | Path |
         rep = stats.report(db.load_runs()) if state.get("in_run") else None
         if state.get("offer"):
             card_history = _history("cards", rep)
+            library = {c["name"]: c for c in db.card_catalog()}
             for c in state["offer"]:
+                known = library.get(c["name"])
+                if known and not c.get("text"):
+                    c["text"] = known["text"]
+                c["picked_before"] = known["picked"] if known else 0
                 c["history"] = card_history.get(c["name"])
                 c["verdict"] = _verdict(c["history"])
         board = state.get("board") or {}

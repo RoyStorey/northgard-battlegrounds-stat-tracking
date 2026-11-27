@@ -34,7 +34,8 @@ gods and clans are winning for you.
 - **Fate cards and favour** are read off the screen: each card offered (name, type,
   god, text) by text recognition, the favour counters by their god icons, and the
   card you took from which god's favour went up. Neutral cards are recorded when
-  they were the only neutral card offered.
+  they were the only neutral card offered. Every card seen goes into a card library
+  (description, god, how often offered and taken, and its effect), built automatically.
 - **Clan cards** with bronze (5 wins), silver (8) and gold (10) medals.
 - **Insights**: takeaways in plain words (only once the evidence holds up), each
   structure's impact, upgrade value by level, tempo (board size in battles won vs

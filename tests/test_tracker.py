@@ -659,3 +659,23 @@ def test_favour_becomes_cards():
     assert names == ["Baldr favor 2", "Call to Peace"]
     rec.handle({"type": "card_offer", "cards": [{"name": "Lost Ruins", "gods": {}}]})
     assert rec.live()["offer"][0]["name"] == "Lost Ruins" and rec.live()["favor"]["Baldr"] == [5, 8]
+
+
+def test_card_library_builds_itself(tmp_path):
+    db = Database(tmp_path / "t.db")
+    rec = Recorder(db)
+    rec.handle({"type": "run_start", "clan": "Bear"})
+    offer = [{"name": "Flurry of Blows", "kind": "Rune", "text": "Target MELEE.", "gods": {"Thor": 1}},
+             {"name": "Beseech Thor", "kind": "Gift", "text": "Gain 2 favor with Thor.", "gods": {"Thor": 2}}]
+    rec.handle({"type": "card_offer", "cards": offer})
+    offer[0]["text"] = "Target MELEE. Gain 10 Crit Chance."  # read more fully the next time
+    rec.handle({"type": "card_offer", "cards": offer})
+    rec.handle({"type": "card_picked", "name": "Flurry of Blows", "god": "Thor", "kind": "rune"})
+    rec.saving = False  # catching up on an old log: don't count twice
+    rec.handle({"type": "card_offer", "cards": offer})
+
+    cards = {c["name"]: c for c in TestClient(create_app(db)).get("/api/cards").json()}
+    flurry = cards["Flurry of Blows"]
+    assert (flurry["offered"], flurry["picked"], flurry["god"], flurry["favor"]) == (2, 1, "Thor", 1)
+    assert flurry["text"] == "Target MELEE. Gain 10 Crit Chance." and flurry["pick_rate"] == 0.5
+    assert cards["Beseech Thor"]["favor"] == 2 and cards["Beseech Thor"]["picked"] == 0

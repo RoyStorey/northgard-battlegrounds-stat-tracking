@@ -148,9 +148,13 @@ class Recorder:
     def _on_card_picked(self, e: dict) -> None:
         self.cards.append(Card(e["name"], e.get("god"), e.get("kind")))
         self.offer = []
+        if self.saving:
+            self.db.note_card_picked(e["name"], e.get("kind"), e.get("god"), _now())
 
     def _on_card_offer(self, e: dict) -> None:
         self.offer = e.get("cards", [])
+        if self.saving:
+            self.db.note_cards_offered(self.offer, _now())
 
     def _on_favor(self, e: dict) -> None:
         """Favour counters read off the screen: keep one "<God> favor <tier>" entry per god."""

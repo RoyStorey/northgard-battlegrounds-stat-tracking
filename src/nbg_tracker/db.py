@@ -51,6 +51,17 @@ CREATE TABLE IF NOT EXISTS shop_labels (
     file TEXT NOT NULL,
     name TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS card_catalog (
+    name TEXT PRIMARY KEY,
+    kind TEXT,
+    god TEXT,
+    favor INTEGER NOT NULL DEFAULT 0,
+    text TEXT,
+    first_seen TEXT,
+    last_seen TEXT,
+    offered INTEGER NOT NULL DEFAULT 0,
+    picked INTEGER NOT NULL DEFAULT 0
+);
 CREATE INDEX IF NOT EXISTS ix_battles_run ON battles(run_id);
 CREATE INDEX IF NOT EXISTS ix_structures_battle ON battle_structures(battle_id);
 CREATE INDEX IF NOT EXISTS ix_cards_battle ON battle_cards(battle_id);
@@ -192,6 +203,37 @@ class Database:
     def add_shop_label(self, file: str, name: str) -> None:
         with self._lock, self._conn:
             self._conn.execute("INSERT INTO shop_labels (file, name) VALUES (?, ?)", (file, name))
+
+    def note_cards_offered(self, cards: list[dict], when: str) -> None:
+        """Every card seen on the choice screen goes into the card library, read off the screen."""
+        with self._lock, self._conn:
+            for c in cards:
+                name = (c.get("name") or "").strip()
+                if not name:
+                    continue
+                gods = c.get("gods") or {}
+                god = next(iter(gods), None)
+                self._conn.execute(
+                    "INSERT INTO card_catalog (name, kind, god, favor, text, first_seen, last_seen, offered)"
+                    " VALUES (?,?,?,?,?,?,?,1)"
+                    " ON CONFLICT(name) DO UPDATE SET offered = offered + 1, last_seen = excluded.last_seen,"
+                    " kind = COALESCE(excluded.kind, kind), god = COALESCE(excluded.god, god),"
+                    " favor = MAX(favor, excluded.favor),"
+                    # keep the fullest reading of the description
+                    " text = CASE WHEN length(COALESCE(excluded.text, '')) > length(COALESCE(text, ''))"
+                    "             THEN excluded.text ELSE text END",
+                    (name, c.get("kind"), god, sum(gods.values()), c.get("text") or None, when, when))
+
+    def note_card_picked(self, name: str, kind: str | None, god: str | None, when: str) -> None:
+        with self._lock, self._conn:
+            self._conn.execute(
+                "INSERT INTO card_catalog (name, kind, god, first_seen, last_seen, picked) VALUES (?,?,?,?,?,1)"
+                " ON CONFLICT(name) DO UPDATE SET picked = picked + 1, last_seen = excluded.last_seen,"
+                " god = COALESCE(god, excluded.god)", (name, kind.title() if kind else None, god, when, when))
+
+    def card_catalog(self) -> list[dict]:
+        with self._lock:
+            return [dict(r) for r in self._conn.execute("SELECT * FROM card_catalog ORDER BY name")]
 
     def shop_labels(self) -> list[tuple[str, str]]:
         with self._lock:

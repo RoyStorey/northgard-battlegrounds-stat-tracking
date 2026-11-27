@@ -182,6 +182,8 @@ svg text { fill: var(--ink-2); font-size: 11px; }
 .legend { display: flex; gap: 14px; font-size: 12px; color: var(--ink-2); margin-bottom: 6px; }
 .legend i { display: inline-block; width: 14px; height: 2px; vertical-align: middle; margin-right: 5px; }
 .lvl { display: inline-block; min-width: 56px; font-variant-numeric: tabular-nums; }
+.lib td { vertical-align: top; }
+.lib .desc { color: var(--ink-2); font-size: 12px; margin-top: 2px; max-width: 420px; }
 .clandot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--c); margin-right: 6px; }
 #tip { position: fixed; pointer-events: none; background: var(--surface); color: var(--ink);
   border: 1px solid var(--border); border-radius: 10px; padding: 8px 10px; font-size: 12px;
@@ -264,6 +266,24 @@ svg text { fill: var(--ink-2); font-size: 11px; }
         build side by side share the credit, and a piece you only add once a run is already winning doesn't take credit
         for those wins. Pieces seen in only a few battles are pulled toward zero until there's more evidence.</p>
     </details>
+  </section>
+
+  <section class="card">
+    <div class="card-head">
+      <h2>Card library</h2>
+      <span class="muted" id="lib-count" style="font-size:13px"></span>
+    </div>
+    <p class="sub">Every Fate card the tracker has seen, read off the card screen as you play: what it does, how often
+      it's offered, how often you take it, and how it does for you.</p>
+    <div class="filters" style="margin-bottom:10px">
+      <input id="lib-search" type="search" placeholder="Search cards or descriptions" aria-label="Search cards" style="flex:1;min-width:180px">
+      <select id="lib-god" aria-label="God"><option value="">All gods</option><option>Thor</option><option>Odin</option>
+        <option>Baldr</option><option>Loki</option><option value="-">Neutral</option></select>
+      <select id="lib-kind" aria-label="Type"><option value="">All types</option><option>Gift</option><option>Rune</option><option>Blessing</option></select>
+      <select id="lib-sort" aria-label="Sort by"><option value="offered">Most offered</option><option value="picked">Most taken</option>
+        <option value="effect">Best effect</option><option value="name">Name</option></select>
+    </div>
+    <div class="scroll" id="library"></div>
   </section>
 
   <div class="grid2">
@@ -529,6 +549,39 @@ function renderRuns() {
     : `<div class="empty">No runs recorded yet. Play a run with the tracker open and it will appear here.</div>`);
 }
 
+/* ---------- card library ---------- */
+let library = [];
+async function loadLibrary() {
+  try { library = await (await fetch("/api/cards")).json(); } catch { return; }
+  renderLibrary();
+}
+function renderLibrary() {
+  const q = $("#lib-search").value.trim().toLowerCase(), god = $("#lib-god").value, kind = $("#lib-kind").value;
+  const sortBy = $("#lib-sort").value;
+  let rows = library.filter((c) =>
+    (!q || (c.name + " " + (c.text || "")).toLowerCase().includes(q)) &&
+    (!god || (god === "-" ? !c.god : c.god === god)) && (!kind || c.kind === kind));
+  const key = {offered: (c) => -c.offered, picked: (c) => -c.picked, name: (c) => c.name,
+               effect: (c) => -(c.effect ? c.effect.impact : -999)}[sortBy];
+  rows.sort((a, b) => { const x = key(a), y = key(b); return x < y ? -1 : x > y ? 1 : a.name.localeCompare(b.name); });
+  $("#lib-count").textContent = library.length ? `${rows.length} of ${library.length} cards` : "";
+  $("#library").innerHTML = !library.length
+    ? `<div class="empty">The library fills in by itself as card offers appear in your games.</div>`
+    : !rows.length ? `<div class="empty">No cards match.</div>`
+    : `<table class="lib"><thead><tr><th>Card</th><th>God</th><th>Type</th><th class="num">Offered</th>
+        <th class="num">Taken</th><th class="num">Effect</th></tr></thead><tbody>` + rows.map((c) => {
+        const e = c.effect;
+        return `<tr><td><b>${esc(c.name)}</b><div class="desc">${esc(c.text || "")}</div></td>
+          <td>${c.god ? esc(c.god) + (c.favor > 1 ? ` <span class="muted">×${c.favor}</span>` : "") : `<span class="muted">Neutral</span>`}</td>
+          <td>${esc(c.kind || "")}</td>
+          <td class="num">${c.offered}</td>
+          <td class="num">${c.picked}<div class="desc" style="text-align:right">${c.pick_rate == null ? "" : pct(c.pick_rate) + " of offers"}</div></td>
+          <td class="num">${e ? `<b>${sign(e.impact)}</b><div class="desc" style="text-align:right">${e.battles} battles · ${e.confidence}</div>`
+                              : `<span class="muted">${c.picked ? "needs more battles" : "–"}</span>`}</td></tr>`;
+      }).join("") + `</tbody></table>`;
+}
+["#lib-search", "#lib-god", "#lib-kind", "#lib-sort"].forEach((s) => $(s).addEventListener("input", renderLibrary));
+
 /* ---------- current run ---------- */
 let liveEditing = false, liveKey = "";
 async function loadLive() {
@@ -631,7 +684,9 @@ $("#tabs").addEventListener("click", (e) => {
 ["#f-patch", "#f-clan", "#f-mode"].forEach((s) => $(s).addEventListener("change", load));
 load();
 loadLive();
+loadLibrary();
 setInterval(load, 15000);
+setInterval(loadLibrary, 30000);
 setInterval(loadLive, 5000);
 </script>
 </body>
