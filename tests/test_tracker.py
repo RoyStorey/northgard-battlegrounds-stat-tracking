@@ -470,3 +470,37 @@ def test_csv_export(tmp_path):
     text = TestClient(create_app(db)).get("/api/export.csv").text
     lines = text.strip().splitlines()
     assert lines[0].startswith("run_id,") and len(lines) == 3 and "Mine 1; Farm 1" in lines[1]
+
+
+def test_naming_once_fills_later_rounds(tmp_path):
+    import cv2
+    from nbg_tracker.learning import Learner
+    from nbg_tracker.vision import Recognizer, find_badges
+
+    shots = tmp_path / "shots"
+    shots.mkdir()
+    db = Database(tmp_path / "t.db")
+    rec = Recognizer(shots)
+    run = Run(clan="Bear", battles=[])
+    for i in range(3):  # the camera moves between rounds
+        img = _board_image([("Mine", *GRID[0]), ("Wolf Den", *GRID[1])], offset=(i * 60, -i * 40), seed=i)
+        cv2.imwrite(str(shots / f"r{i}.jpg"), img)
+        h, w = img.shape[:2]
+        found = rec.recognize(img)
+        assert {s.name for s in found} == {"?"}
+        run.battles.append(Battle(round=i + 1, won=True, structures=found, screenshot=f"r{i}.jpg"))
+    db.save_run(run)
+    client = TestClient(create_app(db, learner=Learner(db, rec, shots)))
+
+    # name both structures in round 1 only
+    first = client.get(f"/api/runs/{run.id}").json()["battles"][0]
+    body = []
+    for s in first["structures"]:
+        name = "Mine" if s["x"] < 0.4 else "Wolf Den"
+        body.append({"name": name, "level": 1, "x": s["x"], "y": s["y"]})
+    client.put(f"/api/battles/{first['id']}/structures", json=body)
+
+    later = client.get(f"/api/runs/{run.id}").json()["battles"][1:]
+    for b in later:
+        assert sorted(s["name"] for s in b["structures"]) == ["Mine", "Wolf Den"]
+        assert not b["reviewed"] and all(s["source"] == "auto" for s in b["structures"])

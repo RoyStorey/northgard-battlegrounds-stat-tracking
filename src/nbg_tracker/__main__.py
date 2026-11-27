@@ -15,6 +15,7 @@ from .capture.screen import ScreenCapturer
 from .capture.savefile import Enricher
 from .db import Database
 from .gamedata import GameData, catalog_from_log
+from .learning import Learner
 from .server import create_app
 from .vision import Recognizer
 
@@ -31,6 +32,7 @@ class Tracker:
         self.shots = db.path.parent / "shots"
         self.shots.mkdir(parents=True, exist_ok=True)
         self.recognizer = Recognizer(self.shots)
+        self.learner = Learner(db, self.recognizer, self.shots)
         if filled := db.fill_unknown_clans(self.gd.structure_clans()):
             log.info("worked out the clan of %d earlier runs", filled)
         self.recorder: Recorder | None = None
@@ -48,8 +50,8 @@ class Tracker:
                          name="train", daemon=True).start()
 
     def serve(self, port: int, background: bool) -> None:
-        app = create_app(self.db, self.status, self.shots, self.gd.structure_names(), self.retrain, self.live,
-                         self.gd.structure_clans())
+        app = create_app(self.db, self.status, self.shots, self.gd.structure_names(), None, self.live,
+                         self.gd.structure_clans(), self.learner)
         server = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning"))
         if background:
             threading.Thread(target=server.run, name="dashboard", daemon=True).start()

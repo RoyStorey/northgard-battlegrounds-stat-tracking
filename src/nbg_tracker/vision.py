@@ -182,8 +182,12 @@ def feature(tile: np.ndarray) -> np.ndarray:
 
 
 class Recognizer:
+    """Nearest-neighbour matcher over crops of structures you named, kept per screenshot so
+    one reviewed round can be learned (or re-learned) on its own, straight after saving."""
+
     def __init__(self, shots_dir: str | Path):
         self.shots_dir = Path(shots_dir)
+        self._by_shot: dict[str, tuple[list[np.ndarray], list[tuple[str, int]]]] = {}
         self.features = np.zeros((0, 128 + 256), np.float32)
         self.labels: list[tuple[str, int]] = []
         self._lock = threading.Lock()
@@ -192,29 +196,49 @@ class Recognizer:
     def ready(self) -> bool:
         return True  # even untrained, it can point out where structures are
 
+    def _examples(self, shot: str, marks) -> tuple[list[np.ndarray], list[tuple[str, int]]]:
+        img = cv2.imread(str(self.shots_dir / shot))
+        if img is None:
+            return [], []
+        h, w = img.shape[:2]
+        badges = [b for b in find_badges(img) if b.structure]
+        feats, labels = [], []
+        for name, level, x, y in marks:
+            if not name or name == UNKNOWN or x is None or y is None:
+                continue
+            b = _nearest(badges, x * w, y * h)
+            tile = crop(img, b) if b else None
+            if tile is not None:
+                feats.append(feature(tile))
+                labels.append((name, level))
+        return feats, labels
+
+    def _rebuild(self) -> None:
+        feats = [f for fs, _ in self._by_shot.values() for f in fs]
+        self.features = np.stack(feats) if feats else np.zeros((0, 128 + 256), np.float32)
+        self.labels = [lab for _, ls in self._by_shot.values() for lab in ls]
+
+    def learn(self, shot: str, marks) -> int:
+        """(Re)learn one screenshot from its marks: (name, level, x, y). Returns examples kept."""
+        feats, labels = self._examples(shot, marks)
+        with self._lock:
+            if feats:
+                self._by_shot[shot] = (feats, labels)
+            else:
+                self._by_shot.pop(shot, None)
+            self._rebuild()
+        return len(labels)
+
     def train(self, marks: list[tuple[str, str, int, float, float]], reviewed: list[str] | None = None) -> None:
         """marks: (screenshot, name, level, x, y) with x, y as fractions of the screenshot."""
-        by_shot: dict[str, list[tuple[str, int, float, float]]] = {}
+        by_shot: dict[str, list] = {}
         for shot, name, level, x, y in marks:
-            if name and name != UNKNOWN:
-                by_shot.setdefault(shot, []).append((name, level, x, y))
-        feats, labels = [], []
-        for shot, ms in by_shot.items():
-            img = cv2.imread(str(self.shots_dir / shot))
-            if img is None:
-                continue
-            h, w = img.shape[:2]
-            badges = [b for b in find_badges(img) if b.structure]
-            for name, level, x, y in ms:
-                b = _nearest(badges, x * w, y * h)
-                tile = crop(img, b) if b else None
-                if tile is not None:
-                    feats.append(feature(tile))
-                    labels.append((name, level))
+            by_shot.setdefault(shot, []).append((name, level, x, y))
+        learned = {shot: self._examples(shot, ms) for shot, ms in by_shot.items()}
         with self._lock:
-            self.features = np.stack(feats) if feats else np.zeros((0, 128 + 256), np.float32)
-            self.labels = labels
-        log.info("recogniser trained on %d labelled structures", len(labels))
+            self._by_shot = {shot: v for shot, v in learned.items() if v[0]}
+            self._rebuild()
+        log.info("recogniser trained on %d labelled structures", len(self.labels))
 
     def recognize(self, img) -> list[Structure]:
         bgr = to_bgr(img)

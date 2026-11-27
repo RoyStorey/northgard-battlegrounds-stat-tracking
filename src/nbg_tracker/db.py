@@ -130,6 +130,21 @@ class Database:
             return [r[0] for r in self._conn.execute(
                 "SELECT screenshot FROM battles WHERE reviewed = 1 AND screenshot IS NOT NULL")]
 
+    def battle_marks(self, battle_id: int) -> tuple[str | None, list[tuple[str, int, float, float]]]:
+        """A battle's screenshot and its structures with positions."""
+        with self._lock:
+            row = self._conn.execute("SELECT screenshot FROM battles WHERE id = ?", (battle_id,)).fetchone()
+            marks = [tuple(r) for r in self._conn.execute(
+                "SELECT name, level, x, y FROM battle_structures WHERE battle_id = ? AND x IS NOT NULL", (battle_id,))]
+        return (row[0] if row else None), marks
+
+    def unreviewed_shots(self, run_id: int) -> list[tuple[int, str]]:
+        """(battle id, screenshot) for a run's battles that have a screenshot and aren't reviewed."""
+        with self._lock:
+            return [tuple(r) for r in self._conn.execute(
+                "SELECT id, screenshot FROM battles WHERE run_id = ? AND reviewed = 0 AND screenshot IS NOT NULL"
+                " ORDER BY round", (run_id,))]
+
     def run_of_battle(self, battle_id: int) -> int | None:
         with self._lock:
             r = self._conn.execute("SELECT run_id FROM battles WHERE id = ?", (battle_id,)).fetchone()

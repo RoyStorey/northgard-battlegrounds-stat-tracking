@@ -13,6 +13,7 @@ from fastapi.responses import FileResponse, HTMLResponse, Response
 
 from . import stats
 from .db import Database
+from .learning import Learner
 from .models import Run, Structure
 
 SHOT_NAME = re.compile(r"^[\w.-]+\.(jpg|png)$")
@@ -26,7 +27,8 @@ def create_app(db: Database, status: dict | None = None, shots_dir: str | Path |
                structure_names: list[str] | None = None,
                on_reviewed: Callable[[], None] | None = None,
                live: Callable[[], dict] | None = None,
-               structure_clans: dict[str, str] | None = None) -> FastAPI:
+               structure_clans: dict[str, str] | None = None,
+               learner: Learner | None = None) -> FastAPI:
     app = FastAPI(title="Northgard Battlegrounds Tracker")
     status = status if status is not None else {}
     shots = Path(shots_dir) if shots_dir else None
@@ -85,7 +87,9 @@ def create_app(db: Database, status: dict | None = None, shots_dir: str | Path |
         return [r.to_dict() for r in db.load_runs()]
 
     @app.get("/api/runs/{run_id}")
-    def run(run_id: int) -> dict:
+    def run(run_id: int, refresh: bool = False) -> dict:
+        if refresh and learner:  # re-read unreviewed rounds with everything learned so far
+            learner.refresh_run(run_id)
         for r in db.load_runs():
             if r.id == run_id:
                 return r.to_dict()
@@ -112,6 +116,10 @@ def create_app(db: Database, status: dict | None = None, shots_dir: str | Path |
             raise HTTPException(404, "no such battle")
         if structure_clans:
             db.fill_unknown_clans(structure_clans)
+        if learner:
+            learner.learn_battle(battle_id)
+            if (run_id := db.run_of_battle(battle_id)) is not None:
+                learner.refresh_run(run_id)
         if on_reviewed:
             on_reviewed()
         return {"saved": len(structures)}

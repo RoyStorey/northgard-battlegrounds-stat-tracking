@@ -70,7 +70,8 @@ kbd { border: 1px solid var(--border); border-radius: 4px; padding: 0 4px; font-
   <a href="/">← Dashboard</a>
   <h1 id="title">Review board</h1>
   <p class="sub">Dots mark the structures the tracker found. Dashed labels are its guesses and "?" means it
-    doesn't know that one yet: click to name or fix it, or click a building it missed. Saving teaches it.</p>
+    doesn't know that one yet: click to name or fix it, or click a building it missed. Saving a round teaches
+    it straight away, and the rounds after it are re-read with what you named.</p>
   <div class="rounds" id="rounds" role="tablist" aria-label="Rounds"></div>
   <div class="layout">
     <section class="card"><div class="board" id="board"></div></section>
@@ -103,7 +104,7 @@ const runId = new URLSearchParams(location.search).get("run");
 let run, battles = [], idx = 0, marks = [], sel = -1, dirty = false;
 
 async function init() {
-  const [r, p] = await Promise.all([fetch(`/api/runs/${runId}`), fetch("/api/pieces")]);
+  const [r, p] = await Promise.all([fetch(`/api/runs/${runId}?refresh=1`), fetch("/api/pieces")]);
   if (!r.ok) { $("#board").innerHTML = `<div class="empty">Run not found.</div>`; return; }
   run = await r.json();
   $("#names").innerHTML = (await p.json()).structures.map((n) => `<option value="${esc(n)}">`).join("");
@@ -189,6 +190,12 @@ async function save() {
   const r = await fetch(`/api/battles/${b.id}/structures`, {method: "PUT", headers: {"Content-Type": "application/json"}, body: JSON.stringify(body)});
   if (!r.ok) { alert("Could not save: " + (await r.text())); return; }
   b.structures = body.map((m) => ({...m, source: "user"})); b.reviewed = true; dirty = false;
+  // the server has learned this round and re-read the rounds not reviewed yet: pick up its new guesses
+  const fresh = await fetch(`/api/runs/${runId}`);
+  if (fresh.ok) {
+    const latest = new Map((await fresh.json()).battles.map((x) => [x.id, x]));
+    battles.forEach((x) => { const n = latest.get(x.id); if (n && !x.reviewed) x.structures = n.structures; });
+  }
   if (idx + 1 < battles.length) show(idx + 1);
   else { renderRounds(); render(); }
 }
