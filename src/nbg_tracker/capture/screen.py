@@ -83,7 +83,9 @@ class ScreenCapturer:
 
     def __init__(self, emit: Callable[[dict], None], shots_dir: str | Path,
                  recognizer: Recognizer | None = None, grab: Callable[[], Image.Image | None] | None = None,
-                 interval: float = 1.5, view_check: Callable[[Image.Image], bool] = is_build_view):
+                 interval: float = 1.5, view_check: Callable[[Image.Image], bool] = is_build_view,
+                 reader=None):
+        """reader: reads the shop and clan off a frame (learning.Learner); optional."""
         self.emit = emit
         self.shots_dir = Path(shots_dir)
         self.shots_dir.mkdir(parents=True, exist_ok=True)
@@ -91,6 +93,7 @@ class ScreenCapturer:
         self._grab = grab
         self.interval = interval
         self.view_check = view_check
+        self.reader = reader
         self.building = False
         self.latest: Image.Image | None = None
         self.latest_quality = -1
@@ -148,6 +151,10 @@ class ScreenCapturer:
         self._live_at = time.monotonic()
         try:
             found = self.recognizer.recognize(img) if self.recognizer else []
+            shop = self.reader.read_shop(img) if self.reader else []
+            clan = self.reader.read_clan(img) if self.reader else None
+            if clan:
+                self.emit({"type": "run_info", "clan": clan, "clan_source": "portrait"})
             tmp = self.shots_dir / "live.tmp.jpg"
             img.save(tmp, format="JPEG", quality=80)
             tmp.replace(self.shots_dir / "live.jpg")
@@ -155,7 +162,8 @@ class ScreenCapturer:
             log.exception("live board update failed")
             return
         self.live = {"file": "live.jpg", "updated": datetime.now().isoformat(timespec="seconds"),
-                     "structures": [{"name": s.name, "level": s.level, "x": s.x, "y": s.y} for s in found]}
+                     "structures": [{"name": s.name, "level": s.level, "x": s.x, "y": s.y} for s in found],
+                     "shop": shop, "clan_guess": clan}
 
     def __call__(self, event: dict) -> None:
         kind = event.get("type")

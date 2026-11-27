@@ -33,6 +33,7 @@ class Tracker:
         self.shots.mkdir(parents=True, exist_ok=True)
         self.recognizer = Recognizer(self.shots)
         self.learner = Learner(db, self.recognizer, self.shots)
+        self.learner.load()
         if filled := db.fill_unknown_clans(self.gd.structure_clans()):
             log.info("worked out the clan of %d earlier runs", filled)
         self.recorder: Recorder | None = None
@@ -62,13 +63,15 @@ class Tracker:
         recorder = Recorder(self.db, on_saved=lambda r: self.status.update(last_saved_run=r.id),
                             structure_clans=self.gd.structure_clans())
         self.recorder = recorder
+        self.learner.recorder = recorder
         sink = recorder.handle
         watchers: list = []
         if screenshots:
             try:
-                capturer = ScreenCapturer(recorder.handle, self.shots, self.recognizer)
+                capturer = ScreenCapturer(recorder.handle, self.shots, self.recognizer, reader=self.learner)
                 capturer.start()
                 self.capturer = capturer
+                self.learner.capturer = capturer
                 watchers.append(capturer)
                 sink = capturer
                 self.status["screenshots"] = True

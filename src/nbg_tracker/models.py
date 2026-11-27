@@ -7,6 +7,12 @@ from typing import Literal
 ROUNDS_PER_SEASON = 4  # the season changes every 4 rounds
 WINS_TO_CLEAR = 10
 LIVES = 5
+MEDALS = [("gold", 10), ("silver", 8), ("bronze", 5)]  # wins needed for each medal
+CLAN_SOURCE_RANK = {"user": 3, "structures": 2, "portrait": 1}  # who may overwrite whom
+
+
+def medal(wins: int) -> str | None:
+    return next((m for m, need in MEDALS if wins >= need), None)
 
 
 @dataclass
@@ -57,6 +63,7 @@ class Run:
     elo_after: int | None = None
     source: str = "manual"  # log, manual, import
     battles: list[Battle] = field(default_factory=list)
+    clan_source: str | None = None  # user (picked by you), structures, portrait
     id: int | None = None
 
     @property
@@ -95,7 +102,7 @@ class Run:
             raise ValueError("clan is required")
         fields = {k: d.get(k) for k in (
             "clan", "warchief", "patch", "mode", "started_at", "ended_at",
-            "elo_before", "elo_after", "id")}
+            "elo_before", "elo_after", "id", "clan_source")}
         return cls(**fields, source=d.get("source") or "manual", battles=battles)
 
 

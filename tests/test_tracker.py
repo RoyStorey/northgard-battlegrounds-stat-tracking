@@ -537,3 +537,53 @@ def test_piece_bought_only_when_ahead_gets_no_free_credit():
     assert tombs["win_rate"] > tombs["expected_win_rate"] - 0.05  # raw numbers look great...
     assert tombs["win_rate"] > 0.6
     assert abs(tombs["impact"]) < 6  # ...but the model gives it little credit
+
+
+def test_medals_and_clan_cards():
+    from nbg_tracker.models import medal
+    assert [medal(w) for w in (4, 5, 7, 8, 9, 10)] == [None, "bronze", "bronze", "silver", "silver", "gold"]
+    runs = [make_run("Bear", [True] * 10 + [False] * 2, ["Mine"]), make_run("Bear", [True] * 5 + [False] * 5, ["Mine"]),
+            make_run("Raven", [True] * 8 + [False] * 5, ["Mine"])]
+    rep = stats.report(runs)
+    cards = {c["name"]: c for c in rep["clan_cards"]}
+    assert list(cards)[:4] == ["Stag", "Raven", "Wolf", "Bear"]
+    assert cards["Bear"]["medals"] == {"gold": 1, "silver": 0, "bronze": 1} and cards["Stag"]["runs"] == 0
+    assert rep["summary"]["medals"] == {"gold": 1, "silver": 1, "bronze": 1}
+
+
+def test_live_panel_editing(tmp_path):
+    import cv2
+    from nbg_tracker.learning import Learner
+    from nbg_tracker.vision import Recognizer, shop_slots
+
+    shots = tmp_path / "shots"
+    shots.mkdir()
+    db = Database(tmp_path / "t.db")
+    rec = Recognizer(shots)
+    learner = Learner(db, rec, shots)
+    recorder = Recorder(db)
+    recorder.handle({"type": "run_start", "clan": "Unknown"})
+    img = _board_image([("Mine", *GRID[0]), ("Farm", *GRID[1])])
+    cv2.imwrite(str(shots / "live.jpg"), img)
+    found = rec.recognize(img)
+
+    class Cap:
+        live = {"file": "live.jpg", "updated": "now", "shop": [None] * 4,
+                "structures": [{"name": s.name, "level": s.level, "x": s.x, "y": s.y} for s in found]}
+
+    learner.recorder, learner.capturer = recorder, Cap()
+    client = TestClient(create_app(db, shots_dir=shots, learner=learner, structure_names=["Mine", "Farm"],
+                                   live=lambda: dict(recorder.live(), board=Cap.live)))
+    marks = [dict(m, name="Mine" if m["x"] < 0.4 else "Farm") for m in Cap.live["structures"]]
+    assert client.put("/api/live/structures", json=marks).json() == {"learned": 2}
+    assert sorted(s.name for s in rec.recognize(img)) == ["Farm", "Mine"]  # learned at once
+    assert sorted(s.name for s in recorder.structures) == ["Farm", "Mine"]  # next battle uses your names
+
+    assert client.put("/api/live/shop/1", json={"name": "Mine"}).status_code == 200
+    assert learner.read_shop(img)[1] == "Mine"
+    live = client.get("/api/live").json()
+    assert live["board"]["shop"][1]["name"] == "Mine" and live["board"]["shop"][1]["owned"]
+
+    assert client.put("/api/live/clan", json={"clan": "Bear"}).status_code == 200
+    recorder.handle({"type": "run_info", "clan": "Raven", "clan_source": "portrait"})
+    assert recorder.live()["clan"] == "Bear"  # your pick isn't overwritten

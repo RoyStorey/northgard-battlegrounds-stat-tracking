@@ -40,6 +40,17 @@ CREATE TABLE IF NOT EXISTS battle_cards (
     god TEXT,
     kind TEXT
 );
+CREATE TABLE IF NOT EXISTS labels (
+    shot TEXT NOT NULL,
+    name TEXT NOT NULL,
+    level INTEGER NOT NULL DEFAULT 1,
+    x REAL NOT NULL,
+    y REAL NOT NULL
+);
+CREATE TABLE IF NOT EXISTS shop_labels (
+    file TEXT NOT NULL,
+    name TEXT NOT NULL
+);
 CREATE INDEX IF NOT EXISTS ix_battles_run ON battles(run_id);
 CREATE INDEX IF NOT EXISTS ix_structures_battle ON battle_structures(battle_id);
 CREATE INDEX IF NOT EXISTS ix_cards_battle ON battle_cards(battle_id);
@@ -65,8 +76,8 @@ class Database:
 
     def _migrate(self) -> None:
         cols = {t: {r[1] for r in self._conn.execute(f"PRAGMA table_info({t})")}
-                for t in ("battles", "battle_structures")}
-        adds = [("battles", "screenshot", "TEXT"), ("battles", "reviewed", "INTEGER NOT NULL DEFAULT 0"),
+                for t in ("runs", "battles", "battle_structures")}
+        adds = [("runs", "clan_source", "TEXT"), ("battles", "screenshot", "TEXT"), ("battles", "reviewed", "INTEGER NOT NULL DEFAULT 0"),
                 ("battle_structures", "x", "REAL"), ("battle_structures", "y", "REAL"),
                 ("battle_structures", "source", "TEXT")]
         with self._conn:
@@ -81,9 +92,9 @@ class Database:
         with self._lock, self._conn:
             cur = self._conn.execute(
                 "INSERT INTO runs (clan, warchief, patch, mode, started_at, ended_at,"
-                " elo_before, elo_after, source) VALUES (?,?,?,?,?,?,?,?,?)",
+                " elo_before, elo_after, source, clan_source) VALUES (?,?,?,?,?,?,?,?,?,?)",
                 (run.clan, run.warchief, run.patch, run.mode, run.started_at,
-                 run.ended_at, run.elo_before, run.elo_after, run.source),
+                 run.ended_at, run.elo_before, run.elo_after, run.source, run.clan_source),
             )
             run_id = cur.lastrowid
             for b in run.battles:
@@ -123,7 +134,8 @@ class Database:
             return [tuple(r) for r in self._conn.execute(
                 "SELECT b.screenshot, s.name, s.level, s.x, s.y FROM battle_structures s"
                 " JOIN battles b ON b.id = s.battle_id"
-                " WHERE b.reviewed = 1 AND b.screenshot IS NOT NULL AND s.x IS NOT NULL")]
+                " WHERE b.reviewed = 1 AND b.screenshot IS NOT NULL AND s.x IS NOT NULL"
+                " UNION ALL SELECT shot, name, level, x, y FROM labels")]
 
     def reviewed_shots(self) -> list[str]:
         with self._lock:
@@ -150,22 +162,40 @@ class Database:
             r = self._conn.execute("SELECT run_id FROM battles WHERE id = ?", (battle_id,)).fetchone()
         return r[0] if r else None
 
-    def set_run_clan(self, run_id: int, clan: str) -> None:
+    def set_run_clan(self, run_id: int, clan: str, source: str | None = None) -> bool:
         with self._lock, self._conn:
-            self._conn.execute("UPDATE runs SET clan = ? WHERE id = ?", (clan, run_id))
+            return self._conn.execute("UPDATE runs SET clan = ?, clan_source = ? WHERE id = ?",
+                                      (clan, source, run_id)).rowcount > 0
 
     def fill_unknown_clans(self, structure_clans: dict[str, str]) -> int:
-        """Name the clan of runs recorded as Unknown, from clan-only structures on their boards."""
+        """Work out runs' clans from clan-only structures you confirmed (never from unreviewed
+        guesses), unless you picked the clan yourself."""
         from .gamedata import clan_from_structures
+        from .models import CLAN_SOURCE_RANK
         filled = 0
         for run in self.load_runs():
-            if run.clan not in (None, "", "Unknown"):
+            if CLAN_SOURCE_RANK.get(run.clan_source, 0) >= CLAN_SOURCE_RANK["structures"]:
                 continue
-            clan = clan_from_structures((s.name for b in run.battles for s in b.structures), structure_clans)
-            if clan:
-                self.set_run_clan(run.id, clan)
+            confirmed = (s.name for b in run.battles if b.reviewed for s in b.structures if s.source != "auto")
+            clan = clan_from_structures(confirmed, structure_clans)
+            if clan and clan != run.clan:
+                self.set_run_clan(run.id, clan, "structures")
                 filled += 1
         return filled
+
+    def add_labels(self, shot: str, marks) -> None:
+        """Structures you named on the current-run panel, on a saved copy of that frame."""
+        with self._lock, self._conn:
+            self._conn.executemany("INSERT INTO labels (shot, name, level, x, y) VALUES (?,?,?,?,?)",
+                                   [(shot, n, lv, x, y) for n, lv, x, y in marks])
+
+    def add_shop_label(self, file: str, name: str) -> None:
+        with self._lock, self._conn:
+            self._conn.execute("INSERT INTO shop_labels (file, name) VALUES (?, ?)", (file, name))
+
+    def shop_labels(self) -> list[tuple[str, str]]:
+        with self._lock:
+            return [tuple(r) for r in self._conn.execute("SELECT file, name FROM shop_labels")]
 
     def delete_run(self, run_id: int) -> bool:
         with self._lock, self._conn:

@@ -22,7 +22,7 @@ from typing import Callable
 
 from ..db import Database
 from ..gamedata import clan_from_structures
-from ..models import LIVES, ROUNDS_PER_SEASON, WINS_TO_CLEAR, Battle, Card, Run, Structure
+from ..models import CLAN_SOURCE_RANK, LIVES, ROUNDS_PER_SEASON, WINS_TO_CLEAR, Battle, Card, Run, Structure
 
 SEASONS = ["Spring", "Summer", "Autumn", "Winter"]
 
@@ -57,7 +57,7 @@ class Recorder:
             next_round = len(run.battles) + 1
             return {
                 "in_run": True,
-                "clan": run.clan, "mode": run.mode, "elo_before": run.elo_before,
+                "clan": run.clan, "clan_source": run.clan_source, "mode": run.mode, "elo_before": run.elo_before,
                 "started_at": run.started_at,
                 "round": next_round,
                 "season": SEASONS[min((next_round - 1) // ROUNDS_PER_SEASON, len(SEASONS) - 1)],
@@ -91,10 +91,26 @@ class Recorder:
         if self.run is None:
             return
         self.run.mode = e.get("mode") or self.run.mode
-        if e.get("clan") and self.run.clan in (None, "Unknown"):
-            self.run.clan = e["clan"]
+        if e.get("clan"):
+            self._set_clan(e["clan"], e.get("clan_source"))
         if self.run.elo_before is None:
             self.run.elo_before = e.get("elo")
+
+    def _set_clan(self, clan: str, source: str | None) -> None:
+        run = self.run
+        if run is None:
+            return
+        unknown = run.clan in (None, "", "Unknown")
+        if unknown or CLAN_SOURCE_RANK.get(source, 0) >= CLAN_SOURCE_RANK.get(run.clan_source, 0):
+            run.clan, run.clan_source = clan, source
+
+    def set_clan(self, clan: str) -> bool:
+        """You picked the clan on the current-run panel."""
+        with self._lock:
+            if self.run is None:
+                return False
+            self._set_clan(clan, "user")
+            return True
 
     def _on_opponent(self, e: dict) -> None:
         pass  # opponent names are not stored
@@ -104,10 +120,10 @@ class Recorder:
                            for s in e.get("structures", [])]
         if "cards" in e:
             self.cards = [Card(c["name"], c.get("god"), c.get("kind")) for c in e["cards"]]
-        if self.run is not None and self.run.clan in (None, "", "Unknown"):
-            clan = clan_from_structures((s.name for s in self.structures), self.structure_clans)
-            if clan:
-                self.run.clan = clan
+        if self.run is not None:
+            confirmed = (s.name for s in self.structures if s.source in ("user", "save", None))
+            if clan := clan_from_structures(confirmed, self.structure_clans):
+                self._set_clan(clan, "structures")
 
     def _on_structure_placed(self, e: dict) -> None:
         self.structures.append(Structure(e["name"], int(e.get("level", 1))))

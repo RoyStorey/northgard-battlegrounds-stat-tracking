@@ -17,6 +17,7 @@ from .learning import Learner
 from .models import Run, Structure
 
 SHOT_NAME = re.compile(r"^[\w.-]+\.(jpg|png)$")
+CLANS = ["Bear", "Raven", "Stag", "Wolf"]
 
 
 def _page(name: str) -> str:
@@ -51,16 +52,71 @@ def create_app(db: Database, status: dict | None = None, shots_dir: str | Path |
     def report(patch: str | None = None, clan: str | None = None, mode: str | None = None) -> dict:
         return stats.report(db.load_runs(), patch or None, clan or None, mode or None) | {"status": status}
 
+    def _history() -> dict[str, dict]:
+        rows = stats.report(db.load_runs())["structures"]
+        keep = ("impact", "battles", "win_rate", "expected_win_rate", "confidence", "runs", "usage")
+        return {r["name"]: {k: r[k] for k in keep} for r in rows}
+
+    def _verdict(h: dict | None) -> str:
+        if not h:
+            return "no data"
+        if h["confidence"] == "low":
+            return "unclear"
+        return "buy" if h["impact"] >= 2 else "skip" if h["impact"] <= -2 else "neutral"
+
     @app.get("/api/live")
     def live_run() -> dict:
         state = live() if live else {"in_run": False}
+        state["clans"] = CLANS
+        state["structure_names"] = sorted(set(structure_names or []))
         board = state.get("board") or {}
-        if board.get("structures"):
-            history = {r["name"]: r for r in stats.report(db.load_runs())["structures"]}
-            for s in board["structures"]:
-                h = history.get(s["name"])
-                s["history"] = {k: h[k] for k in ("impact", "battles", "win_rate", "confidence")} if h else None
+        if board:
+            history = _history()
+            on_board = {s["name"] for s in board.get("structures", [])}
+            for s in board.get("structures", []):
+                s["history"] = history.get(s["name"])
+            board["shop"] = [
+                {"slot": i, "name": name, "history": history.get(name) if name else None,
+                 "verdict": _verdict(history.get(name)) if name else "unknown", "owned": name in on_board}
+                for i, name in enumerate(board.get("shop") or [])]
         return state
+
+    @app.put("/api/live/structures")
+    def live_structures(body: list[dict]) -> dict:
+        if not learner:
+            raise HTTPException(409, "not recording")
+        try:
+            return {"learned": learner.label_live(body)}
+        except (LookupError, KeyError, ValueError) as e:
+            raise HTTPException(409, str(e)) from e
+
+    @app.put("/api/live/shop/{slot}")
+    def live_shop(slot: int, body: dict) -> dict:
+        name = str(body.get("name", "")).strip()
+        if not learner or not name:
+            raise HTTPException(422, "name required")
+        try:
+            learner.label_shop(slot, name)
+        except (LookupError, IndexError) as e:
+            raise HTTPException(409, str(e)) from e
+        return {"slot": slot, "name": name}
+
+    @app.put("/api/live/clan")
+    def live_clan(body: dict) -> dict:
+        clan = body.get("clan")
+        if clan not in CLANS or not learner or not learner.set_live_clan(clan):
+            raise HTTPException(409, "no run in progress, or unknown clan")
+        return {"clan": clan}
+
+    @app.put("/api/runs/{run_id}/clan")
+    def run_clan(run_id: int, body: dict) -> dict:
+        clan = body.get("clan")
+        if clan not in CLANS:
+            raise HTTPException(422, "unknown clan")
+        ok = learner.set_run_clan(run_id, clan) if learner else db.set_run_clan(run_id, clan, "user")
+        if not ok:
+            raise HTTPException(404, "no such run")
+        return {"clan": clan}
 
     @app.get("/api/export.csv")
     def export_csv() -> Response:

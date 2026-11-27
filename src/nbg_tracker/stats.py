@@ -14,7 +14,7 @@ from statistics import mean
 from typing import Callable, Iterable
 
 from .model import adjusted_impacts, situations
-from .models import Battle, Run
+from .models import MEDALS, Battle, Run, medal
 
 SHRINK = 5.0  # pseudo-battles of "no effect" added to every feature
 BASELINE_SHRINK = 2.0  # lighter: seasons quickly collect many battles
@@ -122,9 +122,13 @@ def group_runs(runs: list[Run], key: Callable[[Run], str | None]) -> list[dict]:
         clears = sum(r.cleared for r in rs)
         deltas = [r.elo_after - r.elo_before for r in rs
                   if r.elo_after is not None and r.elo_before is not None]
+        medals = {m: sum(1 for r in rs if medal(r.wins) == m) for m, _ in MEDALS}
         out.append({
             "name": name,
             "runs": len(rs),
+            "medals": medals,
+            "medal_rate": sum(medals.values()) / len(rs),
+            "best": max(r.wins for r in rs),
             "avg_wins": mean(r.wins for r in rs),
             "clear_rate": clears / len(rs),
             "clear_rate_ci": list(wilson(clears, len(rs))),
@@ -156,8 +160,10 @@ def summary(runs: list[Run]) -> dict:
     pvp = [b for _, b in _pvp(runs)]
     deltas = [r.elo_after - r.elo_before for r in runs
               if r.elo_after is not None and r.elo_before is not None]
+    medals = {m: sum(1 for r in runs if medal(r.wins) == m) for m, _ in MEDALS}
     return {
         "runs": len(runs),
+        "medals": medals,
         "battles": len(pvp),
         "avg_wins": mean(r.wins for r in runs) if runs else None,
         "clear_rate": sum(r.cleared for r in runs) / len(runs) if runs else None,
@@ -274,6 +280,20 @@ def takeaways(rep: dict, battles: list[Battle], runs: list[Run]) -> list[dict]:
     return out
 
 
+CLAN_ORDER = ["Stag", "Raven", "Wolf", "Bear"]
+
+
+def clan_cards(runs: list[Run], patch: str | None = None, mode: str | None = None) -> list[dict]:
+    """Every clan's record (ignoring the clan filter), for the cards at the top."""
+    rows = {g["name"]: g for g in group_runs(filter_runs(runs, patch, None, mode), lambda r: r.clan)}
+    empty = {"runs": 0, "medals": {m: 0 for m, _ in MEDALS}, "medal_rate": 0, "best": None,
+             "avg_wins": None, "clear_rate": None, "clear_rate_ci": [0, 1], "avg_elo_delta": None}
+    out = [rows.get(c, {"name": c, **empty}) for c in CLAN_ORDER]
+    if "Unknown" in rows:
+        out.append(rows["Unknown"])
+    return out
+
+
 def report(runs: list[Run], patch: str | None = None, clan: str | None = None,
            mode: str | None = None) -> dict:
     """Everything the dashboard shows, for the filtered set of runs."""
@@ -289,6 +309,7 @@ def report(runs: list[Run], patch: str | None = None, clan: str | None = None,
             "modes": sorted({r.mode for r in runs if r.mode}),
         },
         "summary": summary(selected),
+        "clan_cards": clan_cards(runs, patch, mode),
         "structures": adjusted_impacts(sits, _structures, has_board),
         "cards": adjusted_impacts(sits, _cards, has_cards),
         "gods": adjusted_impacts(sits, _gods, has_cards),

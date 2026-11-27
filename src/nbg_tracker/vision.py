@@ -312,3 +312,72 @@ def is_build_view(img) -> bool:
 def frame_quality(img) -> int:
     """How much of the village a frame shows: number of structure badges found."""
     return sum(1 for b in find_badges(img) if b.structure)
+
+
+def _at_1080(img) -> np.ndarray:
+    bgr = to_bgr(img)
+    scale = REF_HEIGHT / bgr.shape[0]
+    if abs(scale - 1) > 0.01:
+        bgr = cv2.resize(bgr, None, fx=scale, fy=scale, interpolation=cv2.INTER_AREA)
+    return bgr
+
+
+def clan_strip(img) -> np.ndarray:
+    """The three clan-skill icons beside your name (bottom left). Each clan has its own."""
+    bgr = _at_1080(img)
+    return bgr[868:930, 295:485]
+
+
+SHOP_ROWS = (160, 327, 493, 660)  # centres of the shop's structure slots at 1080p, 100 px from the right
+
+
+def shop_slots(img) -> list[np.ndarray]:
+    """The structure icons in the shop column, top to bottom."""
+    bgr = _at_1080(img)
+    w = bgr.shape[1]
+    return [bgr[y - 55:y + 45, w - 150:w - 50] for y in SHOP_ROWS]
+
+
+def icon_feature(tile: np.ndarray) -> np.ndarray:
+    tile = cv2.resize(tile, (64, 64), interpolation=cv2.INTER_AREA)
+    return feature(tile)
+
+
+def clan_feature(strip: np.ndarray) -> np.ndarray:
+    """Colour of the clan-skill icons only (the map shows through around them)."""
+    hsv = cv2.cvtColor(strip, cv2.COLOR_BGR2HSV)
+    mask = ((hsv[:, :, 1] > 90) & (hsv[:, :, 2] > 130)).astype(np.uint8)
+    hist = cv2.calcHist([hsv], [0], mask, [36], [0, 180]).ravel()
+    return np.sqrt(hist / (hist.sum() + 1e-6)).astype(np.float32)
+
+
+class Memory:
+    """Nearest-neighbour memory of named pictures: learns from what you name, answers by likeness."""
+
+    def __init__(self, max_distance: float, feature_fn=icon_feature):
+        self.max_distance = max_distance
+        self.feature_fn = feature_fn
+        self.features: list[np.ndarray] = []
+        self.labels: list[str] = []
+        self._lock = threading.Lock()
+
+    def add(self, tile: np.ndarray, label: str) -> None:
+        with self._lock:
+            self.features.append(self.feature_fn(tile))
+            self.labels.append(label)
+
+    def clear(self) -> None:
+        with self._lock:
+            self.features, self.labels = [], []
+
+    def recall(self, tile: np.ndarray) -> tuple[str | None, float]:
+        with self._lock:
+            if not self.labels:
+                return None, float("inf")
+            d = np.linalg.norm(np.stack(self.features) - self.feature_fn(tile), axis=1)
+            i = int(d.argmin())
+            return (self.labels[i] if d[i] < self.max_distance else None), float(d[i])
+
+
+CLAN_DISTANCE = 0.6
+SHOP_DISTANCE = 0.45
