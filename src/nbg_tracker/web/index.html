@@ -6,162 +6,268 @@
 <title>Battlegrounds Tracker</title>
 <style>
 :root {
-  --page: #f9f9f9; --surface: #ffffff; --ink: #191919; --ink-2: #666666;
-  --grid: #e7e7e7; --axis: #c2c2c2; --border: rgba(11,11,11,0.10);
-  --pos: #257de0; --neg: #ec4647; --series: #257de0; --mid: #efefef;
+  --page: #f4f2ee; --surface: #ffffff; --surface-2: #f8f7f4; --ink: #1d1b18; --ink-2: #6b665e;
+  --grid: #e8e5df; --axis: #c9c4bb; --border: rgba(29,27,24,0.10); --shadow: 0 1px 2px rgba(29,27,24,.06), 0 4px 16px rgba(29,27,24,.05);
+  --pos: #257de0; --neg: #ec4647; --series: #257de0; --accent: #257de0;
+  /* clan identity colours: always shown beside the clan's name and initial, never alone */
+  --stag: #b8860b; --raven: #7c4dd6; --wolf: #e0245e; --bear: #9c5a2c; --unknown: #8a857c;
+  --gold: #c99a06; --silver: #8d969f; --bronze: #b06a35;
   color-scheme: light;
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --page: #0b0b0b; --surface: #191919; --ink: #efefef; --ink-2: #9c9c9c;
-    --grid: #303030; --axis: #474747; --border: rgba(255,255,255,0.10);
-    --pos: #338ced; --neg: #eb6263; --series: #338ced; --mid: #383838;
+    --page: #0f0e0d; --surface: #1a1917; --surface-2: #211f1c; --ink: #f0ede8; --ink-2: #a39d93;
+    --grid: #2e2b27; --axis: #4a4640; --border: rgba(255,255,255,0.09); --shadow: 0 1px 2px rgba(0,0,0,.4);
+    --pos: #338ced; --neg: #eb6263; --series: #338ced; --accent: #4b9cf2;
+    --stag: #d0a02a; --raven: #9b7cf0; --wolf: #f25c8a; --bear: #c27a3e; --unknown: #8f8a80;
+    --gold: #e0b42a; --silver: #b3bcc5; --bronze: #cf8650;
     color-scheme: dark;
   }
 }
 :root[data-theme="dark"] {
-  --page: #0b0b0b; --surface: #191919; --ink: #efefef; --ink-2: #9c9c9c;
-  --grid: #303030; --axis: #474747; --border: rgba(255,255,255,0.10);
-  --pos: #338ced; --neg: #eb6263; --series: #338ced; --mid: #383838;
+  --page: #0f0e0d; --surface: #1a1917; --surface-2: #211f1c; --ink: #f0ede8; --ink-2: #a39d93;
+  --grid: #2e2b27; --axis: #4a4640; --border: rgba(255,255,255,0.09); --shadow: 0 1px 2px rgba(0,0,0,.4);
+  --pos: #338ced; --neg: #eb6263; --series: #338ced; --accent: #4b9cf2;
+  --stag: #d0a02a; --raven: #9b7cf0; --wolf: #f25c8a; --bear: #c27a3e; --unknown: #8f8a80;
+  --gold: #e0b42a; --silver: #b3bcc5; --bronze: #cf8650;
   color-scheme: dark;
 }
 * { box-sizing: border-box; }
 body { margin: 0; background: var(--page); color: var(--ink);
-  font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
-main { max-width: 1080px; margin: 0 auto; padding: 24px 16px 48px; }
-header { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px 16px; margin-bottom: 16px; }
-h1 { font-size: 20px; margin: 0; }
-h2 { font-size: 15px; margin: 0 0 4px; }
-.sub { color: var(--ink-2); font-size: 13px; margin: 0 0 12px; }
-.status { color: var(--ink-2); font-size: 13px; }
-.filters { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
-select, button { font: inherit; color: var(--ink); background: var(--surface);
-  border: 1px solid var(--border); border-radius: 6px; padding: 5px 10px; }
-button[aria-pressed="true"] { border-color: var(--ink); font-weight: 600; }
-.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 16px; }
-.tile, .card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; }
+  font: 14px/1.5 "Segoe UI", system-ui, -apple-system, sans-serif; }
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+.wrap { max-width: 1180px; margin: 0 auto; padding: 0 16px; }
+
+/* header */
+.topbar { position: sticky; top: 0; z-index: 5; background: color-mix(in srgb, var(--page) 88%, transparent);
+  backdrop-filter: blur(8px); border-bottom: 1px solid var(--border); }
+.topbar .wrap { display: flex; align-items: center; gap: 12px; height: 56px; }
+.brand { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 16px; letter-spacing: .2px; }
+.brand svg { flex: none; }
+.pill { font-size: 12px; color: var(--ink-2); border: 1px solid var(--border); background: var(--surface);
+  border-radius: 999px; padding: 3px 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 40vw; }
+.pill .dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--ink-2); margin-right: 6px; vertical-align: 1px; }
+.pill.on .dot { background: #1fa34a; }
+.topbar .spacer { flex: 1; }
+.topbar select, .topbar a.btn { font-size: 13px; }
+
+main { padding: 20px 0 56px; display: grid; gap: 16px; }
+h2 { font-size: 15px; margin: 0; letter-spacing: .2px; }
+.sub { color: var(--ink-2); font-size: 13px; margin: 2px 0 12px; }
+.muted { color: var(--ink-2); }
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 16px 18px;
+  box-shadow: var(--shadow); min-width: 0; }
+.card-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 6px 16px; }
+.grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 16px; }
+button, select, input { font: inherit; color: var(--ink); background: var(--surface);
+  border: 1px solid var(--border); border-radius: 8px; padding: 6px 10px; }
+button { cursor: pointer; }
+button:hover, select:hover { border-color: var(--axis); }
+button.primary { background: var(--accent); border-color: transparent; color: #fff; font-weight: 600; }
+.btn { display: inline-block; border: 1px solid var(--border); border-radius: 8px; padding: 5px 10px; background: var(--surface); color: var(--ink); }
+.seg { display: inline-flex; border: 1px solid var(--border); border-radius: 9px; padding: 2px; background: var(--surface-2); gap: 2px; flex-wrap: wrap; }
+.seg button { border: 0; background: transparent; border-radius: 7px; padding: 5px 12px; color: var(--ink-2); }
+.seg button[aria-pressed="true"] { background: var(--surface); color: var(--ink); font-weight: 600; box-shadow: var(--shadow); }
+.empty { color: var(--ink-2); padding: 22px 0; text-align: center; }
+.num { text-align: right; font-variant-numeric: tabular-nums; }
+table { width: 100%; border-collapse: collapse; font-size: 13px; font-variant-numeric: tabular-nums; }
+th { text-align: left; color: var(--ink-2); font-weight: 500; font-size: 12px; border-bottom: 1px solid var(--axis); padding: 6px 10px 6px 0; }
+td { border-bottom: 1px solid var(--grid); padding: 8px 10px 8px 0; vertical-align: middle; }
+.scroll { overflow-x: auto; }
+.filters { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+
+/* clan cards */
+.clans { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; }
+.clan { position: relative; background: var(--surface); border: 1px solid var(--border); border-radius: 14px;
+  padding: 14px 16px 14px; box-shadow: var(--shadow); cursor: pointer; text-align: left; overflow: hidden; }
+.clan::before { content: ""; position: absolute; inset: 0 0 auto 0; height: 4px; background: var(--c); }
+.clan[aria-pressed="true"] { outline: 2px solid var(--c); outline-offset: -1px; }
+.clan .row { display: flex; align-items: center; gap: 10px; }
+.mono { width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; font-weight: 700; font-size: 14px;
+  color: #fff; background: var(--c); flex: none; }
+.clan .name { font-weight: 700; font-size: 15px; }
+.clan .runs { font-size: 12px; color: var(--ink-2); }
+.clan .big { font-size: 26px; font-weight: 700; margin: 8px 0 2px; font-variant-numeric: tabular-nums; }
+.clan .big small { font-size: 12px; font-weight: 500; color: var(--ink-2); margin-left: 4px; }
+.medals { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+.medal { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; padding: 2px 8px 2px 4px; border-radius: 999px;
+  background: var(--surface-2); border: 1px solid var(--border); font-variant-numeric: tabular-nums; }
+.medal i { width: 14px; height: 14px; border-radius: 50%; background: var(--m); box-shadow: inset 0 -2px 0 rgba(0,0,0,.18); }
+.medal.gold { --m: var(--gold); } .medal.silver { --m: var(--silver); } .medal.bronze { --m: var(--bronze); }
+.medal.none { --m: transparent; color: var(--ink-2); }
+.medal.none i { border: 1px dashed var(--axis); }
+
+/* tiles */
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
 .tile .label { color: var(--ink-2); font-size: 12px; }
-.tile .value { font-size: 26px; font-weight: 600; font-variant-numeric: tabular-nums; }
-.grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 12px; margin-bottom: 12px; }
-.card { margin-bottom: 12px; min-width: 0; }
-.tabs { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0 12px; }
-/* diverging impact bars */
-.impact { display: grid; grid-template-columns: minmax(80px, 200px) 1fr 96px; gap: 2px 10px; align-items: center; }
-.impact .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
-.impact .val { text-align: right; font-variant-numeric: tabular-nums; font-size: 13px; }
-.impact .val small { display: block; white-space: nowrap; color: var(--ink-2); font-size: 11px; line-height: 1.1; }
-.track { position: relative; height: 22px; cursor: default; }
-.track::before { content: ""; position: absolute; left: 50%; top: 0; bottom: 0; width: 1px; background: var(--axis); }
-.bar { position: absolute; top: 5px; height: 12px; }
+.tile .value { font-size: 24px; font-weight: 700; font-variant-numeric: tabular-nums; }
+
+/* takeaways */
+.takeaways { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.takeaways li { display: flex; gap: 10px; align-items: baseline; line-height: 1.5; }
+.tag { flex: none; font-size: 11px; font-weight: 600; padding: 1px 8px; border-radius: 999px;
+  border: 1px solid var(--border); color: var(--ink-2); min-width: 60px; text-align: center; }
+.tag.good { border-color: var(--pos); color: var(--ink); }
+.tag.bad { border-color: var(--neg); color: var(--ink); }
+
+/* what's working */
+.pieces { display: grid; grid-template-columns: minmax(110px, 1.2fr) minmax(140px, 2fr) repeat(3, minmax(90px, 1fr)) 76px;
+  gap: 0; align-items: stretch; font-size: 13px; }
+.pieces .h { color: var(--ink-2); font-size: 12px; padding: 6px 12px 6px 0; border-bottom: 1px solid var(--axis); }
+.pieces .c { padding: 7px 12px 7px 0; border-bottom: 1px solid var(--grid); min-width: 0; display: flex; flex-direction: column; justify-content: center; }
+.pieces .c.effect { flex-direction: row; align-items: center; }
+.pieces .num.c { align-items: flex-end; }
+.pieces .name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pieces small { color: var(--ink-2); display: block; font-size: 11px; line-height: 1.2; }
+.effect { display: flex; align-items: center; gap: 8px; }
+.track { position: relative; height: 14px; flex: 1; cursor: default; }
+.track::before { content: ""; position: absolute; left: 50%; top: -3px; bottom: -3px; width: 1px; background: var(--axis); }
+.bar { position: absolute; top: 2px; height: 10px; }
 .bar.pos { left: 50%; background: var(--pos); border-radius: 0 4px 4px 0; }
 .bar.neg { right: 50%; background: var(--neg); border-radius: 4px 0 0 4px; }
-.bar.low { opacity: .45; }
-@media (max-width: 560px) {
-  .impact { grid-template-columns: 1fr 84px; }
-  .impact .name { grid-column: 1 / -1; margin-top: 6px; }
-  .impact > div:empty { display: none; }
+.bar.low { opacity: .4; }
+.effect b { width: 44px; text-align: right; font-variant-numeric: tabular-nums; }
+.ev { font-size: 11px; padding: 1px 7px; border-radius: 999px; border: 1px solid var(--border); color: var(--ink-2); text-align: center; }
+.ev.high { color: var(--ink); border-color: var(--ink-2); font-weight: 600; }
+@media (max-width: 760px) {
+  .pieces { grid-template-columns: minmax(100px, 1fr) minmax(120px, 1.4fr); }
+  .pieces .wide, .pieces .h.wide { display: none; }
 }
-td.num { white-space: nowrap; }
-.axis-row { display: flex; justify-content: space-between; color: var(--ink-2); font-size: 11px; }
-/* column bars */
+details.help { color: var(--ink-2); font-size: 13px; margin-top: 10px; }
+details.help summary { cursor: pointer; }
+
+/* current run */
+#live { border: 1px solid color-mix(in srgb, var(--accent) 45%, var(--border)); }
+#live[hidden] { display: none; }
+.live-top { display: flex; flex-wrap: wrap; gap: 10px 24px; align-items: center; margin: 10px 0 12px; }
+.stat .label { color: var(--ink-2); font-size: 12px; }
+.stat .value { font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.chips { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 14px; }
+.chip { font-size: 12px; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--border); font-variant-numeric: tabular-nums; }
+.chip.w { background: var(--pos); border-color: var(--pos); color: #fff; }
+.chip.l { border-color: var(--neg); }
+.chip.pve { opacity: .6; }
+.live-grid { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(280px, 1fr); gap: 16px; align-items: start; }
+@media (max-width: 860px) { .live-grid { grid-template-columns: 1fr; } }
+.shot { position: relative; line-height: 0; border-radius: 10px; overflow: hidden; }
+.shot img { width: 100%; }
+.shot .pin { position: absolute; transform: translate(-50%, -50%); width: 20px; height: 20px; border-radius: 50%;
+  background: var(--accent); color: #fff; font-size: 11px; font-weight: 700; display: grid; place-items: center;
+  line-height: 1; border: 2px solid #fff; box-shadow: 0 0 0 1px rgba(0,0,0,.45); }
+.shot .pin.unknown { background: #6b665e; }
+.editlist { display: grid; gap: 6px; }
+.editrow { display: grid; grid-template-columns: 24px minmax(0, 1fr) 62px 70px; gap: 6px; align-items: center; }
+.editrow .n { width: 22px; height: 22px; border-radius: 50%; background: var(--accent); color: #fff; font-size: 11px; font-weight: 700; display: grid; place-items: center; }
+.editrow .n.unknown { background: #6b665e; }
+.editrow input, .editrow select { padding: 4px 6px; min-width: 0; }
+.editrow .val { font-size: 12px; text-align: right; font-variant-numeric: tabular-nums; }
+.section-title { font-size: 12px; font-weight: 700; letter-spacing: .5px; text-transform: uppercase; color: var(--ink-2); margin: 14px 0 8px; }
+.shop { display: grid; gap: 6px; }
+.shoprow { display: grid; grid-template-columns: 26px minmax(0, 1fr) auto; gap: 8px; align-items: center;
+  padding: 6px 8px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface-2); }
+.shoprow .slot { color: var(--ink-2); font-size: 12px; text-align: center; }
+.verdict { font-size: 12px; font-weight: 700; padding: 2px 9px; border-radius: 999px; border: 1px solid var(--border); white-space: nowrap; }
+.verdict.buy { background: var(--pos); border-color: var(--pos); color: #fff; }
+.verdict.skip { border-color: var(--neg); color: var(--ink); }
+.saved { color: #1fa34a; font-size: 12px; }
+
+/* charts */
 .cols { display: flex; align-items: flex-end; gap: 2px; height: 140px; border-bottom: 1px solid var(--axis);
   background: linear-gradient(to top, var(--grid) 1px, transparent 1px) 0 0 / 100% 25%; }
 .col { flex: 1; background: var(--series); border-radius: 4px 4px 0 0; min-width: 4px; }
 .col-labels { display: flex; gap: 2px; color: var(--ink-2); font-size: 11px; }
 .col-labels span { flex: 1; text-align: center; }
 svg text { fill: var(--ink-2); font-size: 11px; }
-table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; font-size: 13px; }
-th { text-align: left; color: var(--ink-2); font-weight: 500; border-bottom: 1px solid var(--axis); padding: 6px 8px 6px 0; }
-td { border-bottom: 1px solid var(--grid); padding: 6px 8px 6px 0; vertical-align: top; }
-td.num, th.num { text-align: right; }
-.scroll { overflow-x: auto; }
-.empty { color: var(--ink-2); padding: 24px 0; text-align: center; }
-/* takeaways */
-.takeaways { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
-.takeaways li { display: flex; gap: 10px; align-items: baseline; line-height: 1.45; }
-.takeaways .tag { flex: none; font-size: 11px; font-weight: 600; padding: 1px 7px; border-radius: 999px;
-  border: 1px solid var(--border); color: var(--ink-2); min-width: 52px; text-align: center; }
-.takeaways .tag.good { border-color: var(--pos); color: var(--ink); }
-.takeaways .tag.bad { border-color: var(--neg); color: var(--ink); }
 .legend { display: flex; gap: 14px; font-size: 12px; color: var(--ink-2); margin-bottom: 6px; }
 .legend i { display: inline-block; width: 14px; height: 2px; vertical-align: middle; margin-right: 5px; }
 .lvl { display: inline-block; min-width: 56px; font-variant-numeric: tabular-nums; }
-/* current run */
-#live { border-color: var(--pos); }
-#live[hidden] { display: none; }
-.live-head { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 12px; align-items: baseline; }
-.live-stats { display: flex; flex-wrap: wrap; gap: 8px 28px; margin: 10px 0; }
-.live-stats .value { font-size: 24px; font-weight: 600; font-variant-numeric: tabular-nums; }
-.live-stats .label { color: var(--ink-2); font-size: 12px; }
-.chips { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 12px; }
-.chip { font-size: 12px; padding: 2px 7px; border-radius: 999px; border: 1px solid var(--border); font-variant-numeric: tabular-nums; }
-.chip.w { background: var(--pos); border-color: var(--pos); color: #fff; }
-.chip.l { border: 1px solid var(--neg); }
-.chip.pve { opacity: .65; }
-.live-board { display: grid; grid-template-columns: minmax(0, 3fr) minmax(220px, 2fr); gap: 12px; align-items: start; }
-@media (max-width: 760px) { .live-board { grid-template-columns: 1fr; } }
-.shot { position: relative; line-height: 0; }
-.shot img { width: 100%; border-radius: 6px; }
-.shot .dot { position: absolute; width: 10px; height: 10px; border-radius: 50%; transform: translate(-50%, -50%);
-  background: var(--pos); border: 2px solid #fff; box-shadow: 0 0 0 1px rgba(0,0,0,.5); }
-.pieces { width: 100%; border-collapse: collapse; font-size: 13px; }
-.pieces td { padding: 5px 6px 5px 0; border-bottom: 1px solid var(--grid); }
-.pieces .mini { position: relative; width: 70px; height: 10px; }
-.pieces .mini::before { content: ""; position: absolute; left: 50%; top: -2px; bottom: -2px; width: 1px; background: var(--axis); }
-.pieces .mini span { position: absolute; top: 1px; height: 8px; }
+.clandot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--c); margin-right: 6px; }
 #tip { position: fixed; pointer-events: none; background: var(--surface); color: var(--ink);
-  border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; font-size: 12px;
-  box-shadow: 0 4px 16px rgba(0,0,0,.15); display: none; max-width: 260px; z-index: 10; }
+  border: 1px solid var(--border); border-radius: 10px; padding: 8px 10px; font-size: 12px;
+  box-shadow: 0 6px 20px rgba(0,0,0,.18); display: none; max-width: 280px; z-index: 10; line-height: 1.45; }
 #tip b { display: block; margin-bottom: 2px; }
-details { color: var(--ink-2); font-size: 13px; }
-a { color: var(--pos); }
 </style>
 </head>
 <body>
-<main>
-  <header>
-    <h1>Battlegrounds Tracker</h1>
-    <span class="status" id="status"></span>
-  </header>
+<header class="topbar">
+  <div class="wrap">
+    <div class="brand">
+      <svg width="26" height="26" viewBox="0 0 26 26" aria-hidden="true"><path d="M13 1 24 7.5v11L13 25 2 18.5v-11Z" fill="var(--accent)"/><path d="M13 7l5 9H8z" fill="#fff"/></svg>
+      Battlegrounds Tracker
+    </div>
+    <span class="pill" id="status"><span class="dot"></span>Starting…</span>
+    <span class="spacer"></span>
+    <a class="btn" href="/api/export.csv" download>Export CSV</a>
+  </div>
+</header>
+
+<main class="wrap">
+  <section class="card" id="live" hidden aria-live="polite">
+    <div class="card-head">
+      <h2 id="live-title">Current run</h2>
+      <label class="muted" style="font-size:13px">Clan
+        <select id="live-clan" aria-label="Clan of the current run"></select></label>
+    </div>
+    <div class="live-top" id="live-stats"></div>
+    <div class="chips" id="live-chips"></div>
+    <div class="live-grid">
+      <div class="shot" id="live-shot"></div>
+      <div>
+        <div class="section-title">Your board</div>
+        <div class="editlist" id="live-structures"></div>
+        <div style="display:flex;gap:8px;align-items:center;margin-top:8px">
+          <button class="primary" id="live-save">Save names</button><span id="live-saved" class="saved"></span>
+        </div>
+        <div class="section-title">Shop</div>
+        <div class="shop" id="live-shop"></div>
+        <p class="sub" style="margin-top:8px">Verdicts come from your past runs. Name a shop item once and it's recognised from then on.</p>
+      </div>
+    </div>
+  </section>
 
   <div class="filters" role="group" aria-label="Filters">
     <select id="f-patch" aria-label="Patch"><option value="">All patches</option></select>
-    <select id="f-clan" aria-label="Clan"><option value="">All clans</option></select>
     <select id="f-mode" aria-label="Mode"><option value="">All modes</option></select>
+    <select id="f-clan" aria-label="Clan"><option value="">All clans</option></select>
   </div>
 
-  <section class="card" id="live" hidden aria-live="polite">
-    <div class="live-head"><h2 id="live-title">Current run</h2><span class="status" id="live-sub"></span></div>
-    <div class="live-stats" id="live-stats"></div>
-    <div class="chips" id="live-chips"></div>
-    <div class="live-board" id="live-board"></div>
-  </section>
+  <section class="clans" id="clans" aria-label="Clans"></section>
 
   <section class="tiles" id="tiles"></section>
 
-  <section class="card" id="takeaways-card">
+  <section class="card">
     <h2>Takeaways</h2>
-    <p class="sub">What your games say so far. Findings only show once there's enough evidence behind them.</p>
+    <p class="sub">What your games say so far. A finding only shows once there's enough evidence behind it.</p>
     <ul class="takeaways" id="takeaways"></ul>
   </section>
 
   <section class="card">
-    <h2>What's working</h2>
-    <p class="sub">Extra wins per 100 battles while the piece is on your board, compared with your usual
-      win rate in the same season. Faded bars have little evidence behind them yet.</p>
-    <div class="tabs" role="tablist" id="tabs">
-      <button data-k="structures" aria-pressed="true">Structures</button>
-      <button data-k="cards">Fate cards</button>
-      <button data-k="gods">Gods</button>
-      <button data-k="synergies">Structure pairs</button>
+    <div class="card-head">
+      <h2>What's working</h2>
+      <div class="seg" role="tablist" id="tabs">
+        <button data-k="structures" aria-pressed="true">Structures</button>
+        <button data-k="cards">Fate cards</button>
+        <button data-k="gods">Gods</button>
+        <button data-k="synergies">Pairs</button>
+      </div>
     </div>
+    <p class="sub" id="tab-help"></p>
     <div id="impact"></div>
+    <details class="help">
+      <summary>How is "effect" worked out?</summary>
+      <p>Each of your PvP battles is compared with similar battles: the same season, a similar record so far in the
+        run, and a similar amount of board. A piece's effect is the extra wins per 100 battles you got with it on the
+        board, beyond what that situation already explains. All pieces are measured together, so pieces you usually
+        build side by side share the credit, and a piece you only add once a run is already winning doesn't take credit
+        for those wins. Pieces seen in only a few battles are pulled toward zero until there's more evidence.</p>
+    </details>
   </section>
 
   <div class="grid2">
     <section class="card">
       <h2>Upgrade value</h2>
-      <p class="sub">Extra wins per 100 battles at each level, for structures you've had at more than one level.</p>
+      <p class="sub">Effect at each level, for structures you've had at more than one level.</p>
       <div class="scroll" id="upgrades"></div>
     </section>
     <section class="card">
@@ -173,42 +279,33 @@ a { color: var(--pos); }
 
   <div class="grid2">
     <section class="card">
-      <h2>Clans</h2>
-      <p class="sub">Average PvP wins per run, and how often you reach 10.</p>
-      <div class="scroll" id="clans"></div>
-    </section>
-    <section class="card">
       <h2>Win rate by round</h2>
       <p class="sub">Where your runs tend to stall.</p>
       <div id="rounds"></div>
     </section>
+    <section class="card">
+      <h2>Wins per run</h2>
+      <p class="sub">Each run, with the average of your last 10. Lines mark bronze (5), silver (8) and gold (10).</p>
+      <div id="trend"></div>
+    </section>
   </div>
 
   <section class="card">
-    <h2>Wins per run</h2>
-    <p class="sub">Each run, with the average of your last 10.</p>
-    <div id="trend"></div>
-  </section>
-
-  <section class="card">
-    <div class="live-head"><h2>Recent runs</h2><a href="/api/export.csv" download>Export all battles (CSV)</a></div>
+    <h2>Recent runs</h2>
     <div class="scroll" id="runs"></div>
   </section>
-
-  <details>
-    <summary>How the numbers work</summary>
-    <p>Late rounds are harder and rare structures appear late, so raw win rates would make late-game pieces look
-      bad. Each battle gets an expected win chance from your own record in that season. A piece's score is wins
-      above that expectation, pulled toward zero when it has only a few battles. Pieces you build together share
-      credit, so check the pairs tab before reading too much into one structure.</p>
-  </details>
 </main>
 <div id="tip" role="tooltip"></div>
+<datalist id="names"></datalist>
 <script>
 const $ = (s) => document.querySelector(s);
 const pct = (x) => x == null ? "–" : Math.round(x * 100) + "%";
 const num = (x, d = 1) => x == null ? "–" : x.toFixed(d);
+const sign = (x, d = 1) => x == null ? "–" : (x > 0 ? "+" : "") + x.toFixed(d);
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;"}[c]));
+const clanVar = (c) => `var(--${["Stag", "Raven", "Wolf", "Bear"].includes(c) ? c.toLowerCase() : "unknown"})`;
+const MEDALS = [["gold", "Gold"], ["silver", "Silver"], ["bronze", "Bronze"]];
+const medalOf = (w) => w >= 10 ? "gold" : w >= 8 ? "silver" : w >= 5 ? "bronze" : null;
 let data = null, tab = "structures";
 
 const tip = $("#tip");
@@ -226,7 +323,6 @@ function bindTips(root) {
     el.addEventListener("mouseleave", () => (tip.style.display = "none"));
   });
 }
-
 function fillSelect(sel, values) {
   const cur = sel.value;
   sel.length = 1;
@@ -241,38 +337,48 @@ async function load() {
   fillSelect($("#f-clan"), data.filters.clans);
   fillSelect($("#f-mode"), data.filters.modes);
   const st = data.status || {};
-  $("#status").textContent = st.paused ? "Recording paused"
-    : st.watching ? "Watching " + st.watching.split(/[\\/]/).pop()
-    : st.watching === null ? "Game log not found – runs are not being recorded" : "";
+  const pill = $("#status");
+  pill.className = "pill" + (st.watching && !st.paused ? " on" : "");
+  pill.innerHTML = `<span class="dot"></span>` + esc(st.paused ? "Recording paused"
+    : st.watching ? "Recording · " + st.watching.split(/[\\/]/).pop()
+    : st.watching === null ? "Game log not found – not recording" : "Dashboard only");
   render();
 }
 
 function render() {
-  const s = data.summary;
-  $("#tiles").innerHTML = [
-    ["Runs", s.runs], ["Avg wins / run", num(s.avg_wins)], ["Reached 10 wins", pct(s.clear_rate)],
-    ["Battle win rate", pct(s.battle_win_rate)],
-    ["Avg ELO change", s.avg_elo_delta == null ? "–" : (s.avg_elo_delta > 0 ? "+" : "") + num(s.avg_elo_delta, 0)],
-  ].map(([l, v]) => `<div class="tile"><div class="label">${l}</div><div class="value">${v}</div></div>`).join("");
-  renderTakeaways(); renderImpact(); renderUpgrades(); renderTempo(); renderClans(); renderRounds(); renderTrend(); renderRuns();
+  renderClans(); renderTiles(); renderTakeaways(); renderImpact(); renderUpgrades(); renderTempo();
+  renderRounds(); renderTrend(); renderRuns();
 }
 
-function renderImpact() {
-  const rows = data[tab];
-  const el = $("#impact");
-  if (!rows.length) { el.innerHTML = `<div class="empty">Not enough battles yet. Pieces show up after ${tab === "synergies" ? 6 : 3} battles.</div>`; return; }
-  const shown = rows.length > 24 ? [...rows.slice(0, 12), ...rows.slice(-12)] : rows;
-  const max = Math.max(5, ...shown.map((r) => Math.abs(r.impact)));
-  el.innerHTML = `<div class="impact">` + shown.map((r) => {
-    const w = (Math.abs(r.impact) / max) * 50;
-    const cls = (r.impact >= 0 ? "pos" : "neg") + (r.confidence === "low" ? " low" : "");
-    const t = `<b>${esc(r.name)}</b>${r.wins}–${r.battles - r.wins} in ${r.battles} battles (${pct(r.win_rate)})<br>` +
-      `Expected at those stages: ${pct(r.expected_win_rate)}<br>Evidence: ${r.confidence}`;
-    return `<div class="name" title="${esc(r.name)}">${esc(r.name)}</div>
-      <div class="track" data-tip="${esc(t)}"><div class="bar ${cls}" style="width:${w}%"></div></div>
-      <div class="val">${r.impact > 0 ? "+" : ""}${num(r.impact)}<small>${r.battles} b · ${r.confidence}</small></div>`;
-  }).join("") + `</div><div class="impact"><div></div><div class="axis-row"><span>−${num(max, 0)}</span><span>0</span><span>+${num(max, 0)}</span></div><div></div></div>`;
-  bindTips(el);
+function medalPills(m, showZero = true) {
+  return MEDALS.map(([k, label]) => (showZero || m[k]) ?
+    `<span class="medal ${k}" title="${label}: ${k === "gold" ? 10 : k === "silver" ? 8 : 5}+ wins"><i></i>${m[k]} ${label}</span>` : "").join("");
+}
+
+function renderClans() {
+  const cur = $("#f-clan").value;
+  $("#clans").innerHTML = data.clan_cards.map((c) => `
+    <button class="clan" style="--c:${clanVar(c.name)}" aria-pressed="${cur === c.name}" data-clan="${esc(c.name)}"
+      title="${c.runs ? "Show only " + esc(c.name) + " runs" : "No runs yet"}">
+      <div class="row"><span class="mono">${esc(c.name[0])}</span>
+        <div><div class="name">${esc(c.name)}</div><div class="runs">${c.runs} run${c.runs === 1 ? "" : "s"}${c.best != null ? ` · best ${c.best}` : ""}</div></div></div>
+      <div class="big">${c.avg_wins == null ? "–" : num(c.avg_wins)}<small>avg wins</small></div>
+      <div class="medals">${medalPills(c.medals)}</div>
+    </button>`).join("");
+  $("#clans").querySelectorAll(".clan").forEach((b) => b.addEventListener("click", () => {
+    const name = b.dataset.clan, sel = $("#f-clan");
+    if (![...sel.options].some((o) => o.value === name)) return;
+    sel.value = sel.value === name ? "" : name; load();
+  }));
+}
+
+function renderTiles() {
+  const s = data.summary;
+  const tiles = [["Runs", s.runs], ["Avg wins / run", num(s.avg_wins)],
+    ["Medals", `<div class="medals" style="margin:4px 0 0">${medalPills(s.medals)}</div>`],
+    ["Battle win rate", pct(s.battle_win_rate)], ["Avg ELO change", s.avg_elo_delta == null ? "–" : sign(s.avg_elo_delta, 0)]];
+  $("#tiles").innerHTML = tiles.map(([l, v]) =>
+    `<div class="card tile"><div class="label">${l}</div><div class="value">${v}</div></div>`).join("");
 }
 
 function renderTakeaways() {
@@ -280,22 +386,63 @@ function renderTakeaways() {
   const label = {good: "Working", bad: "Problem", info: "Note"};
   $("#takeaways").innerHTML = items.length ? items.map((t) =>
     `<li><span class="tag ${t.kind}">${label[t.kind] || "Note"}</span><span>${esc(t.text)}</span></li>`).join("")
-    : `<li class="status">Play and review a few runs to see findings here.</li>`;
+    : `<li class="muted">Play and review a few runs to see findings here.</li>`;
+}
+
+const TAB_HELP = {
+  structures: "Effect = extra wins per 100 battles with the structure on your board, compared with similar battles without it.",
+  cards: "Effect of each Fate card you hold, compared with similar battles without it.",
+  gods: "Effect of holding cards from each god.",
+  synergies: "Pairs of structures that win more together than you'd expect at that stage of a run.",
+};
+const NO_CARDS = "Fate cards and gods aren't tracked yet: the game only writes them to the log when it loads a run, and the save file is encrypted. Reading them from the screen is planned.";
+
+function renderImpact() {
+  $("#tab-help").textContent = TAB_HELP[tab];
+  const rows = data[tab] || [];
+  const el = $("#impact");
+  if (!rows.length) {
+    el.innerHTML = `<div class="empty">${(tab === "cards" || tab === "gods") ? NO_CARDS
+      : `Not enough battles yet. Pieces show up after ${tab === "synergies" ? 6 : 3} battles on a reviewed board.`}</div>`;
+    return;
+  }
+  const shown = rows.length > 30 ? [...rows.slice(0, 15), ...rows.slice(-15)] : rows;
+  const max = Math.max(5, ...shown.map((r) => Math.abs(r.impact)));
+  const pairs = tab === "synergies";
+  el.innerHTML = `<div class="pieces">
+    <div class="h">${pairs ? "Pair" : "Piece"}</div><div class="h">Effect (wins / 100 battles)</div>
+    <div class="h wide num">Won with it</div><div class="h wide num">Similar battles</div>
+    <div class="h wide num">${pairs ? "Battles" : "Used in"}</div><div class="h wide" style="text-align:center">Evidence</div>` +
+    shown.map((r) => {
+      const w = (Math.abs(r.impact) / max) * 50;
+      const cls = (r.impact >= 0 ? "pos" : "neg") + (r.confidence === "low" ? " low" : "");
+      const used = r.runs != null ? `${r.runs} run${r.runs === 1 ? "" : "s"}<small>${pct(r.usage)} of runs</small>` : `${r.battles}`;
+      const t = `<b>${esc(r.name)}</b>You won ${pct(r.win_rate)} of ${r.battles} battles with it.<br>` +
+        `Similar battles without it: ${pct(r.expected_win_rate)}.<br>Effect: ${sign(r.impact)} wins per 100 battles · evidence ${r.confidence}.` +
+        (r.usage != null && r.usage < 0.2 ? "<br>Rarely built, so it's held close to zero." : "");
+      return `<div class="c name" title="${esc(r.name)}">${esc(r.name)}</div>
+        <div class="c effect"><div class="track" data-tip="${esc(t)}"><div class="bar ${cls}" style="width:${w}%"></div></div><b>${sign(r.impact)}</b></div>
+        <div class="c wide num">${pct(r.win_rate)}<small>${r.wins} of ${r.battles}</small></div>
+        <div class="c wide num">${pct(r.expected_win_rate)}<small>without it</small></div>
+        <div class="c wide num">${used}</div>
+        <div class="c wide" style="text-align:center"><span class="ev ${r.confidence}">${r.confidence}</span></div>`;
+    }).join("") + `</div>`;
+  bindTips(el);
 }
 
 function renderUpgrades() {
   const rows = data.upgrades || [];
   if (!rows.length) { $("#upgrades").innerHTML = `<div class="empty">Shows up once you've had the same structure at different levels in a few battles.</div>`; return; }
-  const cell = (v) => v ? `<span class="lvl" title="${v.battles} battles · ${pct(v.win_rate)} won · evidence ${v.confidence}">${v.impact > 0 ? "+" : ""}${num(v.impact)}<small style="color:var(--ink-2)"> ${v.battles}b</small></span>` : `<span class="lvl status">–</span>`;
+  const cell = (v) => v ? `<span class="lvl" title="${v.battles} battles · ${pct(v.win_rate)} won · evidence ${v.confidence}">${sign(v.impact)}<small class="muted"> ${v.battles}b</small></span>` : `<span class="lvl muted">–</span>`;
   $("#upgrades").innerHTML = `<table><thead><tr><th>Structure</th><th class="num">Lv 1</th><th class="num">Lv 2</th><th class="num">Lv 3</th><th class="num">Gain</th></tr></thead><tbody>` +
     rows.map((r) => `<tr><td>${esc(r.name)}</td><td class="num">${cell(r.levels[1])}</td><td class="num">${cell(r.levels[2])}</td><td class="num">${cell(r.levels[3])}</td>
-      <td class="num">${r.upgrade_gain > 0 ? "+" : ""}${num(r.upgrade_gain)}</td></tr>`).join("") + `</tbody></table>`;
+      <td class="num"><b>${sign(r.upgrade_gain)}</b></td></tr>`).join("") + `</tbody></table>`;
 }
 
 function renderTempo() {
   const rows = (data.tempo || []).filter((r) => r.won.levels != null || r.lost.levels != null);
   const el = $("#tempo");
-  if (rows.length < 2) { el.innerHTML = `<div class="empty">Shows up once a few reviewed rounds have boards.</div>`; return; }
+  if (rows.length < 2) { el.innerHTML = `<div class="empty">Shows up once a few rounds have known boards.</div>`; return; }
   const W = 600, H = 200, L = 30, R = 56, T = 10, B = 22;
   const maxR = Math.max(...rows.map((r) => r.round)), minR = Math.min(...rows.map((r) => r.round));
   const maxV = Math.max(4, ...rows.flatMap((r) => [r.won.levels || 0, r.lost.levels || 0]));
@@ -307,12 +454,14 @@ function renderTempo() {
   const ticks = [0, Math.round(maxV / 2), Math.round(maxV)].map((v) =>
     `<line x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}" stroke="var(--grid)"/><text x="${L - 6}" y="${y(v) + 4}" text-anchor="end">${v}</text>`).join("");
   const xt = rows.map((r) => `<text x="${x(r.round)}" y="${H - 6}" text-anchor="middle">${r.round}</text>`).join("");
-  const label = (key, text, colour) => { const r = last(key); return r ? `<text x="${x(r.round) + 6}" y="${y(r[key].levels) + 4}" style="fill:var(--ink-2)">${text}</text>` : ""; };
+  const lw = last("won"), ll = last("lost");
+  let yw = lw ? y(lw.won.levels) : 0, yl = ll ? y(ll.lost.levels) : 0;
+  if (lw && ll && Math.abs(yw - yl) < 12) { if (yw <= yl) { yw -= 6; yl += 6; } else { yw += 6; yl -= 6; } }
   el.innerHTML = `<div class="legend"><span><i style="background:var(--pos)"></i>Won</span><span><i style="background:var(--neg)"></i>Lost</span></div>
     <svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="Board levels by round in won and lost battles">
     ${ticks}${xt}<path d="${line("lost")}" fill="none" stroke="var(--neg)" stroke-width="2"/>
     <path d="${line("won")}" fill="none" stroke="var(--pos)" stroke-width="2"/>
-    ${label("won", "Won")}${label("lost", "Lost")}
+    ${lw ? `<text x="${x(lw.round) + 6}" y="${yw + 4}">Won</text>` : ""}${ll ? `<text x="${x(ll.round) + 6}" y="${yl + 4}">Lost</text>` : ""}
     <line id="txh" y1="${T}" y2="${H - B}" stroke="var(--axis)" visibility="hidden"/>
     <rect x="${L}" y="0" width="${W - L - R}" height="${H}" fill="transparent" id="thit"/></svg>`;
   const svg = el.querySelector("svg"), xh = el.querySelector("#txh");
@@ -324,16 +473,6 @@ function renderTempo() {
     showTip(e, `<b>Round ${r.round}</b>Won: ${f(r.won)}<br>Lost: ${f(r.lost)}`);
   });
   el.querySelector("#thit").addEventListener("mouseleave", () => { tip.style.display = "none"; xh.setAttribute("visibility", "hidden"); });
-}
-
-function renderClans() {
-  const rows = data.clans;
-  $("#clans").innerHTML = rows.length ? `<table><thead><tr><th>Clan</th><th class="num">Runs</th><th class="num">Avg wins</th>
-    <th class="num">Reached 10</th><th class="num">ELO / run</th></tr></thead><tbody>` + rows.map((r) =>
-    `<tr><td>${esc(r.name)}</td><td class="num">${r.runs}</td><td class="num">${num(r.avg_wins)}</td>
-     <td class="num">${pct(r.clear_rate)} <small style="color:var(--ink-2)">(${pct(r.clear_rate_ci[0])}–${pct(r.clear_rate_ci[1])})</small></td>
-     <td class="num">${r.avg_elo_delta == null ? "–" : num(r.avg_elo_delta, 0)}</td></tr>`).join("") + "</tbody></table>"
-    : `<div class="empty">No runs yet.</div>`;
 }
 
 function renderRounds() {
@@ -348,25 +487,25 @@ function renderRounds() {
 function renderTrend() {
   const pts = data.trend, el = $("#trend");
   if (pts.length < 2) { el.innerHTML = `<div class="empty">Shows up after two runs.</div>`; return; }
-  const W = 1000, H = 180, L = 28, B = 20, T = 8;
-  const x = (i) => L + (i / (pts.length - 1)) * (W - L - 8);
+  const W = 600, H = 200, L = 28, B = 20, T = 8, R = 52;
+  const x = (i) => L + (i / (pts.length - 1)) * (W - L - R);
   const y = (v) => T + (1 - v / 10) * (H - T - B);
   const line = pts.map((p, i) => `${i ? "L" : "M"}${x(i).toFixed(1)},${y(p.rolling_avg_wins).toFixed(1)}`).join("");
-  const grid = [0, 5, 10].map((v) => `<line x1="${L}" x2="${W - 8}" y1="${y(v)}" y2="${y(v)}" stroke="var(--grid)"/>
-    <text x="${L - 6}" y="${y(v) + 4}" text-anchor="end">${v}</text>`).join("");
-  const dots = pts.map((p, i) => `<circle cx="${x(i)}" cy="${y(p.wins)}" r="4" fill="var(--ink-2)" opacity=".45"/>`).join("");
+  const grid = [[0, ""], [5, "Bronze"], [8, "Silver"], [10, "Gold"]].map(([v, n]) =>
+    `<line x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}" stroke="var(--grid)"/><text x="${L - 6}" y="${y(v) + 4}" text-anchor="end">${v}</text>` +
+    (n ? `<text x="${W - R + 6}" y="${y(v) + 4}">${n}</text>` : "")).join("");
+  const dots = pts.map((p, i) => `<circle cx="${x(i)}" cy="${y(p.wins)}" r="4" fill="var(--ink-2)" opacity=".4"/>`).join("");
   el.innerHTML = `<svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="Wins per run with 10-run average">
     ${grid}${dots}<path d="${line}" fill="none" stroke="var(--series)" stroke-width="2"/>
     <line id="xh" y1="${T}" y2="${H - B}" stroke="var(--axis)" visibility="hidden"/>
-    <rect x="${L}" y="0" width="${W - L}" height="${H}" fill="transparent" id="hit"/></svg>`;
+    <rect x="${L}" y="0" width="${W - L - R}" height="${H}" fill="transparent" id="hit"/></svg>`;
   const svg = el.querySelector("svg"), xh = el.querySelector("#xh");
   el.querySelector("#hit").addEventListener("mousemove", (e) => {
-    const r = svg.getBoundingClientRect();
-    const vx = ((e.clientX - r.left) / r.width) * W;
-    const i = Math.max(0, Math.min(pts.length - 1, Math.round(((vx - L) / (W - L - 8)) * (pts.length - 1))));
+    const r = svg.getBoundingClientRect(), vx = ((e.clientX - r.left) / r.width) * W;
+    const i = Math.max(0, Math.min(pts.length - 1, Math.round(((vx - L) / (W - L - R)) * (pts.length - 1))));
     xh.setAttribute("x1", x(i)); xh.setAttribute("x2", x(i)); xh.setAttribute("visibility", "visible");
-    const p = pts[i];
-    showTip(e, `<b>Run ${i + 1}</b>${p.wins} wins<br>10-run average: ${num(p.rolling_avg_wins)}`);
+    const p = pts[i], m = medalOf(p.wins);
+    showTip(e, `<b>Run ${i + 1}</b>${p.wins} wins${m ? " · " + m : ""}<br>10-run average: ${num(p.rolling_avg_wins)}`);
   });
   el.querySelector("#hit").addEventListener("mouseleave", () => { tip.style.display = "none"; xh.setAttribute("visibility", "hidden"); });
 }
@@ -375,14 +514,94 @@ function renderRuns() {
   const rows = data.recent_runs;
   const pending = rows.filter((r) => r.to_review).length;
   $("#runs").innerHTML = (pending ? `<p class="sub">${pending} run${pending > 1 ? "s have" : " has"} boards to review. Reviewing teaches the tracker to read your boards.</p>` : "") +
-    (rows.length ? `<table><thead><tr><th>Date</th><th>Clan</th><th class="num">W–L</th>
-    <th>Patch</th><th>Final board</th><th>Board</th></tr></thead><tbody>` + rows.map((r) =>
-    `<tr><td>${esc((r.started_at || "").slice(0, 10))}</td><td>${esc(r.clan)}${r.warchief ? " · " + esc(r.warchief) : ""}</td>
-     <td class="num">${r.wins}–${r.losses}</td><td>${esc(r.patch || "")}</td>
-     <td>${esc(r.final_structures.join(", "))}</td>
-     <td><a href="/review?run=${r.id}">${r.to_review ? "Review " + r.to_review : "View"}</a></td></tr>`).join("") + "</tbody></table>"
+    (rows.length ? `<table><thead><tr><th>Date</th><th>Clan</th><th class="num">W–L</th><th>Medal</th>
+    <th>Final board</th><th>Board</th></tr></thead><tbody>` + rows.map((r) => {
+      const m = medalOf(r.wins);
+      return `<tr><td>${esc((r.started_at || "").slice(0, 10))}</td>
+      <td><span class="clandot" style="--c:${clanVar(r.clan)}"></span>${esc(r.clan)}</td>
+      <td class="num">${r.wins}–${r.losses}</td>
+      <td>${m ? `<span class="medal ${m}"><i></i>${m[0].toUpperCase() + m.slice(1)}</span>` : `<span class="muted">–</span>`}</td>
+      <td>${esc(r.final_structures.join(", "))}</td>
+      <td><a href="/review?run=${r.id}">${r.to_review ? "Review " + r.to_review : "View"}</a></td></tr>`;
+    }).join("") + "</tbody></table>"
     : `<div class="empty">No runs recorded yet. Play a run with the tracker open and it will appear here.</div>`);
 }
+
+/* ---------- current run ---------- */
+let liveEditing = false, liveKey = "";
+async function loadLive() {
+  let st;
+  try { st = await (await fetch("/api/live")).json(); } catch { return; }
+  const card = $("#live");
+  if (!st.in_run) { card.hidden = true; return; }
+  card.hidden = false;
+  $("#names").innerHTML = (st.structure_names || []).map((n) => `<option value="${esc(n)}">`).join("");
+  $("#live-title").textContent = `Current run · Round ${st.round} · ${st.season}`;
+  const sel = $("#live-clan");
+  if (!sel.matches(":focus")) {
+    sel.innerHTML = (st.clan === "Unknown" ? `<option value="">Unknown</option>` : "") +
+      st.clans.map((c) => `<option ${c === st.clan ? "selected" : ""}>${c}</option>`).join("");
+  }
+  const m = medalOf(st.wins);
+  $("#live-stats").innerHTML = [
+    ["Wins", `${st.wins}<span class="muted" style="font-size:13px"> / 10</span>`],
+    ["Losses", st.losses], ["Lives left", st.lives_left === 0 ? "Last chance" : st.lives_left],
+    ["Medal", m ? `<span class="medal ${m}"><i></i>${m[0].toUpperCase() + m.slice(1)}</span>` : `<span class="muted" style="font-size:13px">${5 - st.wins} wins to bronze</span>`],
+    ["Clan source", `<span class="muted" style="font-size:13px">${{user: "picked by you", structures: "from your structures", portrait: "from clan icons"}[st.clan_source] || "not known yet"}</span>`],
+  ].map(([l, v]) => `<div class="stat"><div class="label">${l}</div><div class="value">${v}</div></div>`).join("");
+  $("#live-chips").innerHTML = st.battles.map((b) =>
+    `<span class="chip ${b.won ? "w" : "l"}${b.kind === "pve" ? " pve" : ""}" title="Round ${b.round}${b.kind === "pve" ? " (PvE)" : ""}: ${b.won ? "won" : "lost"}">R${b.round} ${b.kind === "pve" ? "PvE " : ""}${b.won ? "W" : "L"}</span>`).join("")
+    || `<span class="muted">No battles yet.</span>`;
+  const board = st.board;
+  if (!board) {
+    $("#live-shot").innerHTML = `<div class="empty" style="line-height:1.5">The board appears here once the tracker has seen your build phase with the game in front.</div>`;
+    $("#live-structures").innerHTML = ""; $("#live-shop").innerHTML = "";
+    return;
+  }
+  $("#live-shot").innerHTML = `<img src="/shots/live.jpg?t=${encodeURIComponent(board.updated)}" alt="Your board right now">` +
+    board.structures.map((s, i) => `<span class="pin${s.name === "?" ? " unknown" : ""}" style="left:${s.x * 100}%;top:${s.y * 100}%" title="${esc(s.name)}">${i + 1}</span>`).join("");
+  const key = board.updated + JSON.stringify(board.structures.map((s) => [s.name, s.level]));
+  if (!liveEditing && key !== liveKey) {
+    liveKey = key;
+    $("#live-structures").innerHTML = board.structures.length ? board.structures.map((s, i) => {
+      const h = s.history;
+      return `<div class="editrow" data-i="${i}" data-x="${s.x}" data-y="${s.y}">
+        <span class="n${s.name === "?" ? " unknown" : ""}">${i + 1}</span>
+        <input list="names" value="${s.name === "?" ? "" : esc(s.name)}" placeholder="Name this structure" aria-label="Structure ${i + 1}">
+        <select aria-label="Level">${[1, 2, 3].map((l) => `<option ${l === s.level ? "selected" : ""} value="${l}">Lv ${l}</option>`).join("")}</select>
+        <span class="val" title="${h ? `${h.battles} battles · evidence ${h.confidence}` : ""}">${h ? sign(h.impact) : `<span class="muted">–</span>`}</span></div>`;
+    }).join("") : `<div class="muted">No structures found on this frame.</div>`;
+  }
+  const shop = board.shop || [];
+  const V = {buy: "Buy", skip: "Skip", neutral: "Neutral", unclear: "Unclear", "no data": "No data", unknown: ""};
+  $("#live-shop").innerHTML = shop.length ? shop.map((s) => `<div class="shoprow">
+      <span class="slot">${s.slot + 1}</span>
+      ${s.name ? `<div><b>${esc(s.name)}</b>${s.owned ? ` <span class="muted" style="font-size:12px">· on your board</span>` : ""}
+        <div class="muted" style="font-size:12px">${s.history ? `${sign(s.history.impact)} wins/100 · ${s.history.battles} battles · ${s.history.confidence}` : "No history yet"}</div></div>
+        <span class="verdict ${s.verdict === "buy" ? "buy" : s.verdict === "skip" ? "skip" : ""}">${V[s.verdict] || ""}</span>`
+      : `<input list="names" placeholder="Name this item" data-slot="${s.slot}" aria-label="Shop slot ${s.slot + 1}"><button data-slot="${s.slot}">Save</button>`}
+    </div>`).join("") : `<div class="muted">Shop not visible on this frame.</div>`;
+  $("#live-shop").querySelectorAll("button[data-slot]").forEach((b) => b.addEventListener("click", async () => {
+    const input = $(`#live-shop input[data-slot="${b.dataset.slot}"]`);
+    if (!input.value.trim()) return;
+    await fetch(`/api/live/shop/${b.dataset.slot}`, {method: "PUT", headers: {"Content-Type": "application/json"}, body: JSON.stringify({name: input.value.trim()})});
+    loadLive();
+  }));
+}
+$("#live-structures").addEventListener("focusin", () => { liveEditing = true; });
+$("#live-structures").addEventListener("input", () => { liveEditing = true; $("#live-saved").textContent = ""; });
+$("#live-save").addEventListener("click", async () => {
+  const body = [...document.querySelectorAll("#live-structures .editrow")].map((r) => ({
+    name: r.querySelector("input").value.trim() || "?", level: +r.querySelector("select").value, x: +r.dataset.x, y: +r.dataset.y}));
+  const res = await fetch("/api/live/structures", {method: "PUT", headers: {"Content-Type": "application/json"}, body: JSON.stringify(body)});
+  $("#live-saved").textContent = res.ok ? "Saved – the tracker will recognise these from now on." : "Couldn't save: " + (await res.text());
+  liveEditing = false; liveKey = ""; loadLive();
+});
+$("#live-clan").addEventListener("change", async (e) => {
+  if (!e.target.value) return;
+  await fetch("/api/live/clan", {method: "PUT", headers: {"Content-Type": "application/json"}, body: JSON.stringify({clan: e.target.value})});
+  loadLive(); load();
+});
 
 $("#tabs").addEventListener("click", (e) => {
   const b = e.target.closest("button"); if (!b) return;
@@ -391,38 +610,6 @@ $("#tabs").addEventListener("click", (e) => {
   renderImpact();
 });
 ["#f-patch", "#f-clan", "#f-mode"].forEach((s) => $(s).addEventListener("change", load));
-async function loadLive() {
-  let st;
-  try { st = await (await fetch("/api/live")).json(); } catch { return; }
-  const card = $("#live");
-  if (!st.in_run) { card.hidden = true; return; }
-  card.hidden = false;
-  $("#live-title").textContent = `Current run · Round ${st.round} · ${st.season}`;
-  $("#live-sub").textContent = [st.clan !== "Unknown" ? st.clan : "", st.mode || "", st.elo_before != null ? `ELO ${st.elo_before}` : ""].filter(Boolean).join(" · ");
-  $("#live-stats").innerHTML = [["Wins", `${st.wins}<small style="color:var(--ink-2);font-size:14px"> / 10</small>`],
-    ["Losses", st.losses], ["Lives left", st.lives_left === 0 ? "Last chance" : st.lives_left]]
-    .map(([l, v]) => `<div><div class="label">${l}</div><div class="value">${v}</div></div>`).join("");
-  $("#live-chips").innerHTML = st.battles.map((b) =>
-    `<span class="chip ${b.won ? "w" : "l"}${b.kind === "pve" ? " pve" : ""}" title="Round ${b.round}${b.kind === "pve" ? " (PvE)" : ""}: ${b.won ? "won" : "lost"}">R${b.round} ${b.kind === "pve" ? "PvE " : ""}${b.won ? "W" : "L"}</span>`).join("")
-    || `<span class="status">No battles yet.</span>`;
-  const board = st.board;
-  if (!board) { $("#live-board").innerHTML = `<div class="status">The board appears here once the tracker has a screenshot of it.</div>`; return; }
-  const rows = [...board.structures].sort((a, b) => ((b.history?.impact ?? -999) - (a.history?.impact ?? -999)));
-  const max = Math.max(5, ...rows.map((r) => Math.abs(r.history?.impact ?? 0)));
-  $("#live-board").innerHTML = `<div class="shot"><img src="/shots/live.jpg?t=${encodeURIComponent(board.updated)}" alt="Your board right now">` +
-    board.structures.map((s) => `<span class="dot" style="left:${s.x * 100}%;top:${s.y * 100}%" title="${esc(s.name)}"></span>`).join("") + `</div>` +
-    `<div><p class="sub" style="margin:0 0 6px">Your record with each piece on the board, from past runs.</p><table class="pieces"><tbody>` +
-    (rows.length ? rows.map((s) => {
-      const h = s.history;
-      if (!h) return `<tr><td>${esc(s.name === "?" ? "Unrecognised" : s.name)}</td><td colspan="2" class="status">${s.name === "?" ? "name it in review" : "no history yet"}</td></tr>`;
-      const w = Math.abs(h.impact) / max * 50;
-      const bar = h.impact >= 0 ? `left:50%;width:${w}%;background:var(--pos);border-radius:0 4px 4px 0` : `right:50%;width:${w}%;background:var(--neg);border-radius:4px 0 0 4px`;
-      return `<tr title="${h.battles} battles · ${pct(h.win_rate)} won · evidence ${h.confidence}"><td>${esc(s.name)}${s.level > 1 ? " " + s.level : ""}</td>
-        <td><div class="mini"><span style="${bar}${h.confidence === "low" ? ";opacity:.45" : ""}"></span></div></td>
-        <td class="num">${h.impact > 0 ? "+" : ""}${num(h.impact)} <span class="status">${h.battles} b</span></td></tr>`;
-    }).join("") : `<tr><td class="status">No structures found yet.</td></tr>`) + `</tbody></table></div>`;
-}
-
 load();
 loadLive();
 setInterval(load, 15000);

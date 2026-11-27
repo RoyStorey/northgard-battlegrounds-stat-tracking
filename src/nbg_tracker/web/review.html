@@ -6,28 +6,28 @@
 <title>Review Board</title>
 <style>
 :root {
-  --page: #f9f9f9; --surface: #ffffff; --ink: #191919; --ink-2: #666666;
-  --grid: #e7e7e7; --axis: #c2c2c2; --border: rgba(11,11,11,0.10);
+  --page: #f4f2ee; --surface: #ffffff; --ink: #1d1b18; --ink-2: #6b665e;
+  --grid: #e8e5df; --axis: #c9c4bb; --border: rgba(29,27,24,0.10);
   --accent: #257de0; --accent-ink: #ffffff; --good: #006c10;
   color-scheme: light;
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --page: #0b0b0b; --surface: #191919; --ink: #efefef; --ink-2: #9c9c9c;
-    --grid: #303030; --axis: #474747; --border: rgba(255,255,255,0.10);
+    --page: #0f0e0d; --surface: #1a1917; --ink: #f0ede8; --ink-2: #a39d93;
+    --grid: #2e2b27; --axis: #4a4640; --border: rgba(255,255,255,0.09);
     --accent: #338ced; --accent-ink: #ffffff; --good: #53c556;
     color-scheme: dark;
   }
 }
 :root[data-theme="dark"] {
-  --page: #0b0b0b; --surface: #191919; --ink: #efefef; --ink-2: #9c9c9c;
-  --grid: #303030; --axis: #474747; --border: rgba(255,255,255,0.10);
+  --page: #0f0e0d; --surface: #1a1917; --ink: #f0ede8; --ink-2: #a39d93;
+  --grid: #2e2b27; --axis: #4a4640; --border: rgba(255,255,255,0.09);
   --accent: #338ced; --accent-ink: #ffffff; --good: #53c556;
   color-scheme: dark;
 }
 * { box-sizing: border-box; }
 body { margin: 0; background: var(--page); color: var(--ink);
-  font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  font: 14px/1.5 "Segoe UI", system-ui, -apple-system, sans-serif; }
 main { max-width: 1400px; margin: 0 auto; padding: 20px 16px 48px; }
 a { color: var(--accent); }
 h1 { font-size: 18px; margin: 4px 0 2px; }
@@ -39,7 +39,9 @@ button[aria-current="true"] { border-color: var(--ink); font-weight: 600; }
 .rounds { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
 .layout { display: grid; grid-template-columns: 1fr 280px; gap: 12px; align-items: start; }
 @media (max-width: 900px) { .layout { grid-template-columns: 1fr; } }
-.card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 12px; }
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 14px;
+  box-shadow: 0 1px 2px rgba(0,0,0,.06), 0 4px 16px rgba(0,0,0,.05); }
+.head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; }
 .board { position: relative; cursor: crosshair; user-select: none; line-height: 0; }
 .board img { width: 100%; height: auto; border-radius: 6px; display: block; }
 /* a dot on the building, label floating above it so the building stays visible */
@@ -68,7 +70,10 @@ kbd { border: 1px solid var(--border); border-radius: 4px; padding: 0 4px; font-
 <body>
 <main>
   <a href="/">← Dashboard</a>
-  <h1 id="title">Review board</h1>
+  <div class="head"><h1 id="title">Review board</h1>
+    <label class="muted">Clan <select id="clan" aria-label="Clan of this run">
+      <option>Bear</option><option>Raven</option><option>Stag</option><option>Wolf</option></select></label>
+    <span id="clan-saved" class="saved"></span></div>
   <p class="sub">Dots mark the structures the tracker found. Dashed labels are its guesses and "?" means it
     doesn't know that one yet: click to name or fix it, or click a building it missed. Saving a round teaches
     it straight away, and the rounds after it are re-read with what you named.</p>
@@ -109,7 +114,9 @@ async function init() {
   run = await r.json();
   $("#names").innerHTML = (await p.json()).structures.map((n) => `<option value="${esc(n)}">`).join("");
   battles = run.battles.filter((b) => b.screenshot);
-  $("#title").textContent = `${run.clan}${run.warchief ? " · " + run.warchief : ""} · ${run.wins}–${run.losses}` +
+  if (["Bear", "Raven", "Stag", "Wolf"].includes(run.clan)) $("#clan").value = run.clan;
+  else { $("#clan").insertAdjacentHTML("afterbegin", `<option value="" selected>Unknown</option>`); }
+  $("#title").textContent = `${run.wins}–${run.losses}` +
     (run.mode ? ` · ${run.mode}` : "") + (run.started_at ? ` · ${run.started_at.slice(0, 10)}` : "");
   if (!battles.length) {
     $("#board").innerHTML = `<div class="empty">No screenshots for this run.<br>They are taken during the build phase while the game is the window in front.</div>`;
@@ -200,6 +207,11 @@ async function save() {
   else { renderRounds(); render(); }
 }
 $("#save").addEventListener("click", save);
+$("#clan").addEventListener("change", async (e) => {
+  if (!e.target.value) return;
+  const r = await fetch(`/api/runs/${runId}/clan`, {method: "PUT", headers: {"Content-Type": "application/json"}, body: JSON.stringify({clan: e.target.value})});
+  $("#clan-saved").textContent = r.ok ? "Saved" : "Couldn't save";
+});
 $("#toggle-labels").addEventListener("click", (e) => {
   const on = $("#board").classList.toggle("hide-labels");
   e.target.setAttribute("aria-pressed", on); e.target.textContent = on ? "Show labels" : "Hide labels";

@@ -26,6 +26,12 @@ gods and clans are winning for you.
   with your past record for every structure on it.
 - **Clan** is worked out from clan-only structures on your board (e.g. Raven Banner
   Hall), including for runs recorded before.
+- **Fair credit**: pieces are rated with one model that accounts for the season, your
+  record so far in the run and the size of your board, so a piece you only build
+  when already winning doesn't take credit for those wins.
+- **Current run panel**: name structures and pick your clan while you play; the
+  tracker learns from it at once. Shop items you name are recognised and rated.
+- **Clan cards** with bronze (5 wins), silver (8) and gold (10) medals.
 - **Insights**: takeaways in plain words (only once the evidence holds up), each
   structure's impact, upgrade value by level, tempo (board size in battles won vs
   lost), clans, and where runs stall. All battles can be exported as CSV.
@@ -35,7 +41,12 @@ gods and clans are winning for you.
 
 Import an old log with `nbg-tracker replay "%USERPROFILE%\AppData\LocalLow\...\Player-prev.log"`.
 
-## Install and run (Windows)
+## Update and run (Windows)
+
+Double-click `run-tracker.bat`. It pulls the latest version, installs it and starts
+the tracker. Close its window (or Ctrl+C) to stop.
+
+## Install and run by hand
 
 ```
 pip install .[tray]
