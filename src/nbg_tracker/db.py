@@ -51,6 +51,10 @@ CREATE TABLE IF NOT EXISTS shop_labels (
     file TEXT NOT NULL,
     name TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS meta (
+    key TEXT PRIMARY KEY,
+    value TEXT
+);
 CREATE TABLE IF NOT EXISTS card_catalog (
     name TEXT PRIMARY KEY,
     kind TEXT,
@@ -95,6 +99,13 @@ class Database:
             for table, col, decl in adds:
                 if col not in cols[table]:
                     self._conn.execute(f"ALTER TABLE {table} ADD COLUMN {col} {decl}")
+            if not self._conn.execute("SELECT 1 FROM meta WHERE key = 'cards_v2'").fetchone():
+                # The first card reader misread names and guessed picks: drop what it recorded.
+                # (Cards from the game's own save data are named like "Odin 101" and are kept.)
+                self._conn.execute("DELETE FROM card_catalog")
+                self._conn.execute("DELETE FROM battle_cards WHERE kind IN ('rune', 'blessing', 'gift')"
+                                   " AND name NOT GLOB '* [0-9][0-9][0-9]'")
+                self._conn.execute("INSERT INTO meta (key, value) VALUES ('cards_v2', '1')")
 
     def close(self) -> None:
         self._conn.close()
@@ -204,6 +215,20 @@ class Database:
         with self._lock, self._conn:
             self._conn.execute("INSERT INTO shop_labels (file, name) VALUES (?, ?)", (file, name))
 
+    def _card_name(self, name: str) -> str:
+        """The library's name for a card read off the screen: the same card read with a space
+        missing ("Callto Peace") maps to one entry, which keeps the best-spaced spelling."""
+        from .capture.cards import card_key
+        key = card_key(name)
+        for (known,) in self._conn.execute("SELECT name FROM card_catalog"):
+            if card_key(known) == key:
+                if name.count(" ") > known.count(" "):
+                    self._conn.execute("UPDATE card_catalog SET name = ? WHERE name = ?", (name, known))
+                    self._conn.execute("UPDATE battle_cards SET name = ? WHERE name = ?", (name, known))
+                    return name
+                return known
+        return name
+
     def note_cards_offered(self, cards: list[dict], when: str) -> None:
         """Every card seen on the choice screen goes into the card library, read off the screen."""
         with self._lock, self._conn:
@@ -211,6 +236,7 @@ class Database:
                 name = (c.get("name") or "").strip()
                 if not name:
                     continue
+                name = self._card_name(name)
                 gods = c.get("gods") or {}
                 god = next(iter(gods), None)
                 self._conn.execute(
@@ -224,12 +250,14 @@ class Database:
                     "             THEN excluded.text ELSE text END",
                     (name, c.get("kind"), god, sum(gods.values()), c.get("text") or None, when, when))
 
-    def note_card_picked(self, name: str, kind: str | None, god: str | None, when: str) -> None:
+    def note_card_picked(self, name: str, kind: str | None, god: str | None, when: str) -> str:
         with self._lock, self._conn:
+            name = self._card_name(name)
             self._conn.execute(
                 "INSERT INTO card_catalog (name, kind, god, first_seen, last_seen, picked) VALUES (?,?,?,?,?,1)"
                 " ON CONFLICT(name) DO UPDATE SET picked = picked + 1, last_seen = excluded.last_seen,"
                 " god = COALESCE(god, excluded.god)", (name, kind.title() if kind else None, god, when, when))
+        return name
 
     def card_catalog(self) -> list[dict]:
         with self._lock:

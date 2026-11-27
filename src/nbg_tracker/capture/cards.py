@@ -10,8 +10,11 @@ Nothing here needs you to type anything in:
 * The favour counters at the top left ("2/3" under each god's icon) are read
   the same way, and which god each one is comes from its icon.
 * Which card you took is worked out when the choice screen closes: the god
-  whose favour went up, by how much, matches one card. A neutral card (no
-  god icons) is recorded when it was the only neutral card on offer.
+  whose favour went up, by how much, must match exactly one card on offer.
+  Anything uncertain (a misread counter, a neutral card, two matching cards)
+  is not recorded rather than guessed.
+* Cards are found by their type word (GIFT / RUNE / BLESSING) wherever they're
+  drawn, and only read once the screen has stopped moving.
 
 Positions are for a 1080-pixel-high screen; other sizes are scaled to it.
 """
@@ -45,10 +48,9 @@ _EYE = np.frombuffer(base64.b64decode(
     "TEVGR0hTUklGRUZLUDY+Pj4+Pj4+PjdRUDQ8PDw8PDw8PDRPTzM6PGmWlGQ6OjNNTTFIuovWzo62QTFMTC5Uvm3YzW6/Sy9LSiwwO4SurH04"
     "MS1KSCosLS4uLi4tLipJRycpKioqKioqKidHPz89P0FKSUA+PT4+"), np.uint8).reshape(10, 12).astype(int)
 
-CARD_CENTRES = (572, 960, 1348)  # x of the three offered cards (relative to the screen centre at 960)
 FAVOR_SLOTS = (51, 113, 176, 238)  # x of the favour counters, left to right
 GOD_ICON_MATCH = 25  # mean grey difference for a favour icon to count as that god
-CARD_ICON_MATCH = 0.3  # correlation for a god icon on a card
+CARD_ICON_MATCH = 0.5  # correlation for a god icon on a card (true icons score ~0.75-0.8)
 
 
 def _norm(a: np.ndarray) -> np.ndarray:
@@ -119,34 +121,103 @@ class CardReader:
             out[god] = (int(m.group(1)), int(m.group(2))) if m else None
         return out
 
+    def boxes(self, img: np.ndarray) -> list[tuple[float, float, str]]:
+        """(x, y, text) of every piece of text found in an image."""
+        engine = self._engine()
+        if engine is None:
+            return []
+        return [((b[0][0] + b[2][0]) / 2, (b[0][1] + b[2][1]) / 2, str(t).strip())
+                for b, t, _ in (engine(img)[0] or [])]
+
     def read_offers(self, img) -> list[dict]:
+        """The cards on offer, found by their type word (GIFT / RUNE / BLESSING) wherever they're
+        drawn: the name sits just above it, the description below. Returns [] unless every card
+        reads cleanly, so a half-drawn or animating screen is simply tried again."""
         bgr = _at_1080(img)
         gray = cv2.cvtColor(bgr, cv2.COLOR_BGR2GRAY)
-        shift = bgr.shape[1] // 2 - 960  # cards are centred on the screen
+        w = bgr.shape[1]
+        x0, y0 = max(0, w // 2 - 600), 200
+        region = bgr[y0:850, x0:w // 2 + 600]
+        found = [(x + x0, y + y0, t) for x, y, t in self.boxes(region)]
+        anchors = [(x, y, KINDS[_letters(t)]) for x, y, t in found if _letters(t) in KINDS]
+        anchors.sort()
+        if len(anchors) != 3:
+            return []
         offers = []
-        for cx in CARD_CENTRES:
-            cx += shift
-            title = self.text(bgr[555:597, cx - 170:cx + 170])
-            title = re.sub(r"^[^A-Za-z]+", "", title).strip()
-            if not title:  # no text reader: name the card by how its title looks
-                t = cv2.resize(gray[560:592, cx - 150:cx + 150], (24, 6), interpolation=cv2.INTER_AREA)
-                title = "Card " + hashlib.md5((t // 16).tobytes()).hexdigest()[:6]
-            kind = self.text(bgr[608:642, cx - 140:cx + 140]).title() or None
-            desc = self.text(bgr[650:760, cx - 165:cx + 165])
-            gods: dict[str, int] = {}
-            for k in range(4):  # favour icons stack down the card's top-left corner
-                ix, iy = cx - 124, 298 + 70 * k
-                if float((gray[iy - 20:iy + 20, ix - 20:ix + 20] > 150).mean()) < 0.1:
-                    break
-                icon = _norm(_patch(gray, ix, iy))
-                score = {g: float(np.dot(icon.ravel(), _norm(t).ravel())) for g, t in _GOD_TEMPLATES.items()}
-                god = max(score, key=score.get)
-                if score[god] < CARD_ICON_MATCH:
-                    break
-                gods[god] = gods.get(god, 0) + 1
-            offers.append({"name": title, "kind": kind if kind in ("Gift", "Rune", "Blessing") else kind,
-                           "text": desc, "gods": gods})
+        for ax, ay, kind in anchors:
+            above = [(ay - y, x, t) for x, y, t in found if 25 < ay - y < 90 and abs(x - ax) < 130]
+            if not above:
+                return []
+            gap, _, title = min(above)
+            title = clean_title(title)
+            if not title:
+                return []
+            below = sorted((y, x, t) for x, y, t in found if 15 < y - ay < 170 and abs(x - ax) < 175
+                           and _letters(t) not in KINDS)
+            lines: list[list[tuple[float, str]]] = []
+            for y, x, t in below:  # group into lines, then read each left to right
+                if lines and abs(lines[-1][0][0] - y) < 12:
+                    lines[-1].append((y, x, t))
+                else:
+                    lines.append([(y, x, t)])
+            text = " ".join(" ".join(t for _, _, t in sorted(line, key=lambda b: b[1])) for line in lines)
+            scale = gap / 50  # name-to-type distance is 50 px at full size
+            offers.append({"name": title, "kind": kind, "text": text.strip(),
+                           "gods": self._card_gods(gray, ax, ay - gap, scale)})
         return offers
+
+    @staticmethod
+    def _card_gods(gray: np.ndarray, x: float, title_y: float, scale: float) -> dict[str, int]:
+        """God icons stacked in a card's top-left corner (one per point of favour). The spot is
+        estimated from the text, so a few pixels around it are searched for the best match."""
+        if abs(scale - 1) < 0.05:
+            scale = 1.0  # measured from text boxes: small differences are noise
+        templates = {g: _norm(t).ravel() for g, t in _GOD_TEMPLATES.items()}
+        gods: dict[str, int] = {}
+        r = max(8, int(round(18 * scale)))
+        step = max(1, int(round(70 * scale)))
+        ix0, iy0 = int(round(x - 124 * scale)), int(round(title_y - 277 * scale))
+        for k in range(4):
+            best_god, best = None, CARD_ICON_MATCH
+            for dy in range(-6, 7, 2):
+                for dx in range(-6, 7, 2):
+                    ix, iy = ix0 + dx, iy0 + k * step + dy
+                    patch = gray[iy - r:iy + r, ix - r:ix + r]
+                    if patch.shape != (2 * r, 2 * r) or float((patch > 150).mean()) < 0.1:
+                        continue
+                    icon = _norm(cv2.resize(patch, (16, 16), interpolation=cv2.INTER_AREA).astype(np.float32)).ravel()
+                    for g, t in templates.items():
+                        score = float(np.dot(icon, t))
+                        if score > best:
+                            best_god, best = g, score
+            if best_god is None:
+                break
+            gods[best_god] = gods.get(best_god, 0) + 1
+        return gods
+
+
+KINDS = {"gift": "Gift", "rune": "Rune", "blessing": "Blessing"}
+
+
+def _letters(text: str) -> str:
+    return re.sub(r"[^a-z]", "", text.lower())
+
+
+def card_key(name: str) -> str:
+    """Identity of a card name, ignoring spaces and case ("BeseechThor" = "Beseech Thor")."""
+    return _letters(name)
+
+
+def clean_title(text: str) -> str:
+    """Drop the banner's ornaments (read as X or symbols) and restore missing spaces."""
+    words = [w for w in re.split(r"\s+", text) if w]
+    while words and (len(_letters(words[0])) <= 1 or not re.search(r"[A-Za-z]{2}", words[0])):
+        words.pop(0)
+    while words and (len(_letters(words[-1])) <= 1 or not re.search(r"[A-Za-z]{2}", words[-1])):
+        words.pop()
+    title = " ".join(re.sub(r"[^A-Za-z'\-]", "", w) for w in words)
+    title = re.sub(r"(?<=[a-z])(?=[A-Z])", " ", title)  # BeseechThor -> Beseech Thor
+    return re.sub(r"\s+", " ", title).strip()
 
 
 def favor_tier(value: int, threshold: int) -> int:
@@ -158,38 +229,72 @@ def favor_tier(value: int, threshold: int) -> int:
 class CardTracker:
     """Follows card screens across frames and reports offers, picks and favour as events."""
 
-    def __init__(self, reader: CardReader, emit: Callable[[dict], None]):
+    def __init__(self, reader: CardReader, emit: Callable[[dict], None], keep_dir=None, keep: int = 10):
+        """keep_dir: where to keep copies of the last few card screens read, for troubleshooting."""
         self.reader = reader
         self.emit = emit
+        self.keep_dir = keep_dir
+        self.keep = keep
         self.offers: list[dict] | None = None
         self.favor_before: dict | None = None
-        self._title_key: bytes | None = None
+        self._offer_names: tuple | None = None
+        self._last_sig = None
+        self._read_sig = None
         self._last_after: dict | None = None
         self.favor: dict = {}
 
     def reset(self) -> None:
-        self.offers, self.favor_before, self._title_key = None, None, None
+        self.offers, self.favor_before, self._offer_names = None, None, None
         self._last_after = None
 
     def frame(self, img) -> bool:
         """Look at a frame. Returns True if it was the card screen (not a board frame)."""
-        if CardReader.is_card_screen(img):
-            bgr = _at_1080(img)
-            key = cv2.resize(cv2.cvtColor(bgr[555:597, :], cv2.COLOR_BGR2GRAY), (96, 4)).tobytes()
-            if self.offers is None or key != self._title_key:  # new offer, or rerolled
-                if self.offers is not None and self._closed_since_offer:
-                    self._settle(bgr, final=True)  # the last offer closed without a favour change
-                self._title_key = key
-                if self.favor_before is None:
-                    self.favor_before = self.reader.read_favor(bgr)
-                self.offers = self.reader.read_offers(bgr)
-                self.emit({"type": "card_offer", "cards": self.offers})
+        if not CardReader.is_card_screen(img):
+            self._last_sig = None
+            if self.offers is not None:
+                self._closed_since_offer = True
+                self._settle(img, final=False)
+            return False
+        bgr = _at_1080(img)
+        w = bgr.shape[1]
+        sig = cv2.resize(cv2.cvtColor(bgr[200:850, max(0, w // 2 - 600):w // 2 + 600], cv2.COLOR_BGR2GRAY),
+                         (60, 32), interpolation=cv2.INTER_AREA).astype(np.int16)
+        steady = self._last_sig is not None and float(np.abs(sig - self._last_sig).mean()) < 4
+        self._last_sig = sig
+        if not steady:
+            return True  # cards still moving in (or a hover changed them): read on the next frame
+        if self._read_sig is not None and float(np.abs(sig - self._read_sig).mean()) < 4:
             self._closed_since_offer = False
-            return True
-        if self.offers is not None:
-            self._closed_since_offer = True
-            self._settle(img, final=False)
-        return False
+            return True  # same cards as already read
+        offers = self.reader.read_offers(bgr)
+        if len(offers) != 3:
+            return True  # couldn't read every card cleanly; try again
+        self._read_sig = sig
+        names = tuple(card_key(c["name"]) for c in offers)
+        if names != self._offer_names:  # a new offer, or a reroll
+            if self.offers is not None and self._closed_since_offer:
+                self._settle(bgr, final=True)
+            if self.favor_before is None:
+                self.favor_before = self.reader.read_favor(bgr)
+            self.offers, self._offer_names = offers, names
+            self.emit({"type": "card_offer", "cards": offers})
+            self._keep_copy(bgr)
+        self._closed_since_offer = False
+        return True
+
+    def _keep_copy(self, bgr) -> None:
+        if not self.keep_dir:
+            return
+        try:
+            from datetime import datetime
+            from pathlib import Path
+            folder = Path(self.keep_dir)
+            folder.mkdir(parents=True, exist_ok=True)
+            cv2.imwrite(str(folder / f"cards-{datetime.now():%Y%m%d-%H%M%S}.jpg"), bgr, [cv2.IMWRITE_JPEG_QUALITY, 85])
+            for old in sorted(folder.glob("cards-*.jpg"))[:-self.keep]:
+                old.unlink()
+        except OSError:
+            log.exception("couldn't keep a copy of the card screen")
 
     def battle_starting(self, img=None) -> None:
         """The build phase is over: settle any offer still open."""
@@ -199,33 +304,37 @@ class CardTracker:
     _closed_since_offer = False
 
     def _settle(self, img, final: bool) -> None:
-        """final=False: only settle if favour changed (the screen may just be peeked at)."""
+        """Work out which card was taken from the change in favour. Only records a pick when the
+        favour readings are complete and exactly one card on offer matches the change; anything
+        uncertain is left unrecorded rather than guessed. final=False: the screen may only be
+        hidden for a peek at the board, so wait unless favour has changed."""
         if img is not None:
             after = self.reader.read_favor(img)
             self._last_after = after
-        else:  # no frame: use the latest board reading since the offer
-            after = self._last_after if self._last_after is not None else dict(self.favor_before or {})
-        before = self.favor_before or {}
-        gained = {g: v[0] - before[g][0] for g, v in after.items()
-                  if v and before.get(g) and v[0] > before[g][0]}
-        gained.update({g: v[0] for g, v in after.items() if v and g not in before})  # a god newly shown
-        pick = None
-        if gained:
-            pick = next((c for c in self.offers if c["gods"] == gained), None)
-            if pick is None:  # favour counters can wrap at a new tier: match on the god alone
-                pick = next((c for c in self.offers if set(c["gods"]) == set(gained)), None)
-        elif not final:
-            return  # nothing changed yet: maybe just peeking at the board
         else:
-            neutral = [c for c in self.offers if not c["gods"]]
-            pick = neutral[0] if len(neutral) == 1 else None
-        if pick is not None:
-            god = next(iter(pick["gods"]), None)
-            self.emit({"type": "card_picked", "name": pick["name"], "god": god,
+            after = self._last_after
+        before = self.favor_before or {}
+        if not after or not before or set(after) != set(before) or None in after.values() or None in before.values():
+            if final:
+                self.reset()
+            return
+        change = {g: after[g][0] - before[g][0] for g in after}
+        if any(d < 0 for d in change.values()):  # a misread: don't trust either reading
+            if final:
+                self.reset()
+            return
+        gained = {g: d for g, d in change.items() if d > 0}
+        if not gained:
+            if final:
+                self.reset()
+            return
+        matches = [c for c in self.offers if c["gods"] == gained]
+        if len(matches) == 1 and sum(gained.values()) <= 4:
+            pick = matches[0]
+            self.emit({"type": "card_picked", "name": pick["name"], "god": next(iter(pick["gods"])),
                        "kind": (pick["kind"] or "").lower() or None})
-        if after:
-            self.favor = after
-            self.emit({"type": "favor", "values": {g: list(v) for g, v in after.items() if v}})
+        self.favor = after
+        self.emit({"type": "favor", "values": {g: list(v) for g, v in after.items()}})
         self.reset()
 
     def update_favor(self, img) -> None:

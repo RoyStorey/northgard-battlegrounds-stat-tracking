@@ -6,7 +6,7 @@ from nbg_tracker import stats
 from nbg_tracker.capture import Recorder
 from nbg_tracker.capture.logtail import JsonLinesParser, LogTailer
 from nbg_tracker.db import Database
-from nbg_tracker.models import Battle, Run, Structure
+from nbg_tracker.models import Battle, Card, Run, Structure
 from nbg_tracker.server import create_app
 
 
@@ -589,62 +589,84 @@ def test_live_panel_editing(tmp_path):
     assert recorder.live()["clan"] == "Bear"  # your pick isn't overwritten
 
 
-class _FakeCardReader:
-    """Stands in for screen reading: frames are dicts saying what's on screen."""
-
-    def read_favor(self, img):
-        return {g: tuple(v) for g, v in img["favor"].items()}
-
-    def read_offers(self, img):
-        return img["offers"]
+def test_card_titles_cleaned_and_matched():
+    from nbg_tracker.capture.cards import card_key, clean_title
+    assert clean_title("X Read the Runes X") == "Read the Runes"
+    assert clean_title("BeseechThor") == "Beseech Thor"
+    assert clean_title("2 Lost Ruins") == "Lost Ruins"
+    assert card_key("Callto Peace") == card_key("Call to Peace")
 
 
-def _card_frames(monkeypatch):
-    from nbg_tracker.capture import cards
-    monkeypatch.setattr(cards.CardReader, "is_card_screen", staticmethod(lambda img: img["screen"] == "cards"))
-    monkeypatch.setattr(cards, "_at_1080", lambda img: img)
-    monkeypatch.setattr(cards.cv2, "resize", lambda a, *k, **kw: a)
-    monkeypatch.setattr(cards.cv2, "cvtColor", lambda a, *k: a)
-    return cards
-
-
-class _Frame(dict):
-    def __getitem__(self, k):
-        if isinstance(k, tuple):  # the title strip, used to notice rerolls
-            return _TitleKey(dict.__getitem__(self, "offers"))
-        return dict.__getitem__(self, k)
-
-
-class _TitleKey:
-    def __init__(self, offers):
-        self.v = "|".join(o["name"] for o in offers)
-
-    def tobytes(self):
-        return self.v.encode()
-
-
-def test_card_pick_from_favour_change(monkeypatch):
-    cards = _card_frames(monkeypatch)
+def _tracker_with_offer(offers, before):
+    from nbg_tracker.capture.cards import CardTracker
     out = []
-    t = cards.CardTracker(_FakeCardReader(), out.append)
-    offer1 = [{"name": "Lost Wanderer", "kind": "Gift", "gods": {}}, {"name": "Flurry of Blows", "kind": "Rune", "gods": {"Thor": 1}}]
-    offer2 = [{"name": "Call to Peace", "kind": "Blessing", "gods": {"Baldr": 1}},
-              {"name": "Beseech Thor", "kind": "Gift", "gods": {"Thor": 2}}, {"name": "Lost Ruins", "kind": "Gift", "gods": {}}]
-    fav0 = {"Thor": (0, 3), "Baldr": (1, 3)}
-    assert t.frame(_Frame(screen="cards", offers=offer1, favor=fav0))
-    assert t.frame(_Frame(screen="cards", offers=offer2, favor=fav0))  # rerolled
-    assert not t.frame(_Frame(screen="board", offers=offer2, favor=fav0))  # peeking: nothing changed yet
-    assert [e["type"] for e in out] == ["card_offer", "card_offer"]
-    t.frame(_Frame(screen="board", offers=offer2, favor={"Thor": (0, 3), "Baldr": (2, 3)}))
-    picked = [e for e in out if e["type"] == "card_picked"]
-    assert picked == [{"type": "card_picked", "name": "Call to Peace", "god": "Baldr", "kind": "blessing"}]
 
-    out.clear()  # a neutral card: settled when the battle starts
-    fav1 = {"Thor": (0, 3), "Baldr": (2, 3)}
-    t.frame(_Frame(screen="cards", offers=offer2, favor=fav1))
-    t.frame(_Frame(screen="board", offers=offer2, favor=fav1))
-    t.battle_starting()
-    assert [e["name"] for e in out if e["type"] == "card_picked"] == ["Lost Ruins"]
+    class Reader:
+        favor = None
+
+        def read_favor(self, img):
+            return Reader.favor
+
+    t = CardTracker(Reader(), out.append)
+    t.offers, t.favor_before = offers, before
+    return t, Reader, out
+
+
+OFFER = [{"name": "Call to Peace", "kind": "Blessing", "gods": {"Baldr": 1}},
+         {"name": "Beseech Thor", "kind": "Gift", "gods": {"Thor": 2}},
+         {"name": "Lost Ruins", "kind": "Gift", "gods": {}}]
+
+
+def test_pick_recorded_only_when_certain():
+    before = {"Thor": (0, 3), "Baldr": (1, 3)}
+    # the favour change matches exactly one card: recorded
+    t, R, out = _tracker_with_offer(OFFER, before)
+    R.favor = {"Thor": (0, 3), "Baldr": (2, 3)}
+    t._settle("frame", final=False)
+    assert [e["name"] for e in out if e["type"] == "card_picked"] == ["Call to Peace"]
+
+    # peeking at the board: nothing changed, nothing settled yet
+    t, R, out = _tracker_with_offer(OFFER, before)
+    R.favor = dict(before)
+    t._settle("frame", final=False)
+    assert out == [] and t.offers is not None
+
+    # a neutral card (no favour change) is not guessed, even at battle start
+    t._settle(None, final=True)
+    assert not [e for e in out if e["type"] == "card_picked"] and t.offers is None
+
+    # a misread counter (favour going down, or a counter unreadable) records nothing
+    for misread in ({"Thor": (0, 3), "Baldr": (0, 3)}, {"Thor": None, "Baldr": (2, 3)}):
+        t, R, out = _tracker_with_offer(OFFER, before)
+        R.favor = misread
+        t._settle("frame", final=True)
+        assert not [e for e in out if e["type"] == "card_picked"]
+
+    # a change no card explains (or two cards explain) records nothing
+    t, R, out = _tracker_with_offer(OFFER, before)
+    R.favor = {"Thor": (1, 3), "Baldr": (1, 3)}
+    t._settle("frame", final=True)
+    assert not [e for e in out if e["type"] == "card_picked"]
+
+
+def test_old_card_data_cleared_once(tmp_path):
+    import sqlite3
+    path = tmp_path / "t.db"
+    db = Database(path)
+    db._conn.execute("DELETE FROM meta")  # pretend the database predates the cleanup
+    run = make_run("Bear", [True], ["Mine"])
+    run.battles[0].cards = [Card("SlyD X Duelists", "Thor", "rune"), Card("Odin 101", "Odin", "rune"),
+                            Card("Thor favor 2", "Thor", "favor")]
+    db.save_run(run)
+    db.note_cards_offered([{"name": "X Read the Runes X", "gods": {}}], "now")
+    db.close()
+    db = Database(path)
+    names = sorted(c.name for c in db.load_runs()[0].battles[0].cards)
+    assert names == ["Odin 101", "Thor favor 2"] and db.card_catalog() == []
+    db.note_cards_offered([{"name": "Callto Peace", "gods": {"Baldr": 1}}], "now")
+    db.note_cards_offered([{"name": "Call to Peace", "gods": {"Baldr": 1}}], "now")
+    [entry] = db.card_catalog()
+    assert entry["name"] == "Call to Peace" and entry["offered"] == 2
 
 
 def test_favour_becomes_cards():

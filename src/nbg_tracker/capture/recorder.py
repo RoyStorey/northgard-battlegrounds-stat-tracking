@@ -146,10 +146,11 @@ class Recorder:
                 return
 
     def _on_card_picked(self, e: dict) -> None:
-        self.cards.append(Card(e["name"], e.get("god"), e.get("kind")))
+        name = e["name"]
+        if self.saving:  # the library's spelling, so the same card is always one name
+            name = self.db.note_card_picked(name, e.get("kind"), e.get("god"), _now())
+        self.cards.append(Card(name, e.get("god"), e.get("kind")))
         self.offer = []
-        if self.saving:
-            self.db.note_card_picked(e["name"], e.get("kind"), e.get("god"), _now())
 
     def _on_card_offer(self, e: dict) -> None:
         self.offer = e.get("cards", [])

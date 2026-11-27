@@ -69,7 +69,7 @@ class Tracker:
         watchers: list = []
         if screenshots:
             try:
-                cards = CardTracker(CardReader(), recorder.handle)
+                cards = CardTracker(CardReader(), recorder.handle, keep_dir=self.shots / "cards")
                 capturer = ScreenCapturer(recorder.handle, self.shots, self.recognizer, reader=self.learner,
                                           cards=cards)
                 capturer.start()
